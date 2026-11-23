@@ -1,0 +1,12 @@
+# ⚠️ Datos personales: este repo es público (GitHub Pages).
+# Los Excel y los notebooks antiguos contienen correos reales → nunca se suben.
+old/
+*.xlsx
+*.xls
+*.csv
+*.ipynb
+.ipynb_checkpoints/
+
+node_modules/
+.DS_Store
+Thumbs.db

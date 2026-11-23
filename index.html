@@ -1,0 +1,237 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>Amigo Invisible 🎄</title>
+  <meta name="description" content="Organiza el sorteo del Amigo Invisible desde el móvil: a cada participante le llega un correo con su amigo invisible.">
+  <meta name="theme-color" content="#0b2e22">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="img/icono.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="img/icono-180.png">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Amigo Invisible">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Mountains+of+Christmas:wght@700&family=Nunito:wght@400;600;700;800;900&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/estilos.css">
+</head>
+<body>
+  <canvas id="nieve" aria-hidden="true"></canvas>
+  <canvas id="confeti" aria-hidden="true"></canvas>
+
+  <header class="cabecera">
+    <ul class="luces" aria-hidden="true"></ul>
+    <p class="destellos" aria-hidden="true">✦ ❄ ✦</p>
+    <h1 class="titulo">Amigo Invisible</h1>
+    <p class="subtitulo" id="subtitulo">Navidad</p>
+  </header>
+
+  <main>
+    <!-- ───────── Participantes ───────── -->
+    <section class="vista activa" id="vista-participantes" aria-labelledby="t-participantes">
+      <div class="tarjeta">
+        <h2 id="t-participantes">Participantes <span class="contador" id="contador">0</span></h2>
+        <form id="form-participante" class="form-persona" novalidate autocomplete="off">
+          <label class="campo">
+            <span>Nombre</span>
+            <input name="nombre" maxlength="40" placeholder="Ej. Lola" autocapitalize="words" enterkeyhint="next">
+          </label>
+          <label class="campo">
+            <span>Correo</span>
+            <input name="email" type="email" placeholder="lola@ejemplo.com" inputmode="email" autocapitalize="off" autocorrect="off" spellcheck="false" enterkeyhint="done">
+          </label>
+          <button class="boton boton-rojo boton-ancho" type="submit">＋ Añadir al sorteo</button>
+        </form>
+        <button class="boton boton-suave boton-ancho" id="btn-pegar" type="button">📋 Pegar una lista entera</button>
+      </div>
+
+      <ul class="lista" id="lista-participantes" aria-label="Lista de participantes"></ul>
+
+      <div class="vacio" id="vacio-participantes">
+        <div class="vacio-emoji" aria-hidden="true">🎅</div>
+        <p><strong>Todavía no hay nadie en la lista.</strong><br>Añade a los participantes con su correo: a cada uno le llegará su amigo invisible.</p>
+      </div>
+    </section>
+
+    <!-- ───────── Exclusiones ───────── -->
+    <section class="vista" id="vista-exclusiones" aria-labelledby="t-exclusiones">
+      <div class="tarjeta">
+        <h2 id="t-exclusiones">Exclusiones</h2>
+        <p class="nota">Parejas que no pueden tocarse entre sí, en ningún sentido. Perfecto para parejas o hermanos.</p>
+        <form id="form-exclusion" class="form-exclusion">
+          <select id="ex-a" aria-label="Primera persona"></select>
+          <span class="equis" aria-hidden="true">✕</span>
+          <select id="ex-b" aria-label="Segunda persona"></select>
+          <button class="boton boton-rojo boton-ancho" type="submit">🚫 Añadir exclusión</button>
+        </form>
+      </div>
+
+      <ul class="lista" id="lista-exclusiones" aria-label="Lista de exclusiones"></ul>
+
+      <div class="tarjeta">
+        <label class="interruptor">
+          <input type="checkbox" id="aj-reciprocos">
+          <span class="pista" aria-hidden="true"></span>
+          <span class="interruptor-texto">Evitar intercambios cruzados
+            <small>Si a Ana le toca Luis, a Luis no le tocará Ana.</small>
+          </span>
+        </label>
+      </div>
+
+      <div class="viabilidad" id="viabilidad" role="status"></div>
+    </section>
+
+    <!-- ───────── Ajustes ───────── -->
+    <section class="vista" id="vista-ajustes" aria-labelledby="t-evento">
+      <div class="tarjeta">
+        <h2 id="t-evento">El evento</h2>
+        <label class="campo"><span>Título</span>
+          <input id="aj-titulo" maxlength="60" placeholder="Navidad">
+        </label>
+        <label class="campo"><span>Presupuesto</span>
+          <input id="aj-presupuesto" maxlength="40" placeholder="Ej. 20 €">
+        </label>
+        <label class="campo"><span>Fecha y lugar del intercambio</span>
+          <input id="aj-fecha" maxlength="80" placeholder="Ej. 24 de diciembre, en casa de Pablo">
+        </label>
+        <label class="campo"><span>Mensaje para todos (opcional)</span>
+          <textarea id="aj-mensaje" maxlength="600" rows="3" placeholder="Ej. ¡Nada de calcetines!"></textarea>
+        </label>
+        <button class="boton boton-suave boton-ancho" id="btn-vista-previa" type="button">👀 Ver cómo queda el correo</button>
+      </div>
+
+      <div class="tarjeta">
+        <h2>Conexión</h2>
+        <p class="nota">Es la clave que pusiste en el script de Google (propiedad <code>CLAVE</code>).</p>
+        <label class="campo"><span>Clave del organizador</span>
+          <span class="con-boton">
+            <input id="aj-clave" type="password" autocomplete="current-password" autocapitalize="off" spellcheck="false">
+            <button type="button" class="icono-boton" id="btn-ver-clave" aria-label="Mostrar la clave" aria-pressed="false">👁️</button>
+          </span>
+        </label>
+        <label class="casilla"><input type="checkbox" id="aj-recordar"> Recordar la clave en este dispositivo</label>
+        <button class="boton boton-verde boton-ancho" id="btn-probar" type="button">🔌 Probar conexión</button>
+        <div class="estado-servidor" id="estado-servidor" role="status"></div>
+      </div>
+
+      <div class="tarjeta">
+        <h2>En varios dispositivos</h2>
+        <p class="nota">Guarda la lista en tu cuenta de Google: prepárala en el ordenador y haz el sorteo desde el móvil.</p>
+        <div class="botones-par">
+          <button class="boton boton-suave" id="btn-guardar-nube" type="button">📤 Subir lista</button>
+          <button class="boton boton-suave" id="btn-cargar-nube" type="button">📥 Bajar lista</button>
+        </div>
+      </div>
+
+      <div class="pie-ajustes">
+        <button class="boton boton-oro" id="btn-instalar" type="button" hidden>📲 Instalar la app en el móvil</button>
+        <button class="boton boton-texto" id="btn-borrar-todo" type="button">🗑️ Borrar todos los datos de este dispositivo</button>
+      </div>
+    </section>
+
+    <!-- ───────── Sorteo ───────── -->
+    <section class="vista" id="vista-sorteo" aria-labelledby="t-sorteo">
+      <div class="tarjeta">
+        <h2 id="t-sorteo">El sorteo</h2>
+        <ul class="resumen" id="resumen"></ul>
+        <div class="segmentado" role="radiogroup" aria-label="Modo del sorteo">
+          <label><input type="radio" name="modo" value="prueba" checked><span>🧪 Prueba</span></label>
+          <label><input type="radio" name="modo" value="real"><span>🎅 De verdad</span></label>
+        </div>
+        <p class="nota nota-modo" id="nota-modo"></p>
+      </div>
+
+      <div class="escenario">
+        <button class="regalo" id="btn-sortear" type="button" aria-describedby="texto-regalo">
+          <span class="regalo-tapa"><span class="regalo-lazo"></span></span>
+          <span class="regalo-caja"></span>
+          <span class="sr-only">Hacer el sorteo</span>
+        </button>
+        <p class="regalo-texto" id="texto-regalo" aria-live="polite">Toca el regalo para hacer el sorteo</p>
+      </div>
+
+      <div class="tarjeta resultado" id="resultado" hidden tabindex="-1"></div>
+
+      <div class="tarjeta" id="tarjeta-reenviar" hidden>
+        <h2>Reenviar un correo</h2>
+        <p class="nota">¿A alguien no le ha llegado? Se le reenvía el mismo amigo invisible que le tocó (tú no lo verás).</p>
+        <label class="campo"><span>Persona</span>
+          <select id="reenviar-nombre"></select>
+        </label>
+        <label class="campo"><span>Correo nuevo (opcional)</span>
+          <input id="reenviar-email" type="email" inputmode="email" autocapitalize="off" spellcheck="false" placeholder="Déjalo vacío para usar el mismo">
+        </label>
+        <button class="boton boton-verde boton-ancho" id="btn-reenviar" type="button">📮 Reenviar</button>
+      </div>
+    </section>
+  </main>
+
+  <nav class="pestanas" aria-label="Secciones">
+    <button type="button" data-vista="participantes" class="activa" aria-current="page">
+      <span class="ico" aria-hidden="true">👥</span><span>Gente</span>
+      <span class="insignia" id="insignia-participantes" hidden>0</span>
+    </button>
+    <button type="button" data-vista="exclusiones"><span class="ico" aria-hidden="true">🚫</span><span>Exclusiones</span></button>
+    <button type="button" data-vista="ajustes"><span class="ico" aria-hidden="true">⚙️</span><span>Ajustes</span></button>
+    <button type="button" data-vista="sorteo"><span class="ico" aria-hidden="true">🎁</span><span>Sorteo</span></button>
+  </nav>
+
+  <!-- ───────── Diálogos ───────── -->
+  <dialog id="dlg-confirmar" class="dialogo">
+    <form method="dialog" class="dialogo-cuerpo">
+      <h3 id="confirmar-titulo"></h3>
+      <p id="confirmar-texto" class="dialogo-texto"></p>
+      <div class="botones">
+        <button value="cancelar" class="boton boton-suave" id="confirmar-cancelar">Cancelar</button>
+        <button value="ok" class="boton boton-verde" id="confirmar-ok">Aceptar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-editar" class="dialogo">
+    <form id="form-editar" class="dialogo-cuerpo" novalidate>
+      <h3>Editar participante</h3>
+      <label class="campo"><span>Nombre</span><input id="editar-nombre" maxlength="40" autocapitalize="words"></label>
+      <label class="campo"><span>Correo</span><input id="editar-email" type="email" inputmode="email" autocapitalize="off" spellcheck="false"></label>
+      <p class="error-dialogo" id="editar-error" role="alert"></p>
+      <div class="botones">
+        <button type="button" class="boton boton-suave" data-cerrar>Cancelar</button>
+        <button type="submit" class="boton boton-verde">Guardar</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-pegar" class="dialogo">
+    <form id="form-pegar" class="dialogo-cuerpo" novalidate>
+      <h3>Pegar una lista</h3>
+      <p class="nota">Una persona por línea: <code>Nombre, correo</code>. También vale copiar las dos columnas de un Excel.</p>
+      <textarea id="pegar-texto" rows="8" spellcheck="false" placeholder="Lola, lola@ejemplo.com&#10;Pablo, pablo@ejemplo.com"></textarea>
+      <p class="error-dialogo" id="pegar-error" role="alert"></p>
+      <div class="botones">
+        <button type="button" class="boton boton-suave" data-cerrar>Cancelar</button>
+        <button type="submit" class="boton boton-rojo">Añadir a la lista</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="dlg-previa" class="dialogo dialogo-grande">
+    <div class="dialogo-cuerpo">
+      <h3>Así llegará el correo</h3>
+      <p class="nota" id="previa-asunto"></p>
+      <iframe id="previa-iframe" class="previa" title="Vista previa del correo" sandbox=""></iframe>
+      <div class="botones">
+        <button type="button" class="boton boton-verde" data-cerrar>Cerrar</button>
+      </div>
+    </div>
+  </dialog>
+
+  <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+  <script src="js/config.js"></script>
+  <script src="js/sorteo.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
