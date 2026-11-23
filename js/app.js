@@ -609,6 +609,11 @@
     return Object.assign({}, datos.ajustes, { titulo: tituloEvento(), fecha: fechaCorta(datos.ajustes.fecha) });
   }
 
+  /** Dirección de la página del rasca y gana, junto a esta (el servidor solo la acepta si está en GitHub Pages). */
+  function urlRasca() {
+    return new URL('rasca.html', location.href).href;
+  }
+
   $('#aj-clave').addEventListener('input', ev => {
     clave = ev.target.value;
     infoServidor = null;
@@ -720,7 +725,7 @@
 
   $('#btn-vista-previa').addEventListener('click', ev => conBoton(ev.currentTarget, async () => {
     try {
-      const r = await llamar('vistaPrevia', { ajustes: ajustesParaCorreo() });
+      const r = await llamar('vistaPrevia', { ajustes: ajustesParaCorreo(), urlRasca: urlRasca() });
       $('#previa-asunto').textContent = 'Asunto: ' + r.asunto;
       $('#previa-iframe').srcdoc = r.html;
       $('#dlg-previa').showModal();
@@ -1034,6 +1039,7 @@
         ajustes: ajustesParaCorreo(),
         prueba,
         repetir: repetir === true,
+        urlRasca: urlRasca(),
       });
       estadoSello('hecho', 'Hecho');
       mensajeTrasSorteo = r.prueba ? 'Prueba enviada. Mira tu bandeja de entrada.' : 'Correos enviados.';
@@ -1101,7 +1107,7 @@
       const ok = await confirmar({ titulo: 'Reenviar', texto: `A ${nombre} le volverá a llegar el correo${email ? ' en ' + email : ''}, con la misma persona que le tocó.`, ok: 'Reenviar' });
       if (!ok) return;
       try {
-        const r = await llamar('reenviar', email ? { nombre, email } : { nombre });
+        const r = await llamar('reenviar', Object.assign({ nombre, urlRasca: urlRasca() }, email ? { email } : {}));
         if (email) {
           const local = datos.participantes.find(p => p.nombre.toLowerCase() === nombre.toLowerCase());
           if (local) { local.email = email; guardar(); renderParticipantes(); }

@@ -56,6 +56,9 @@ function crearBackend({ clave = CLAVE, cuota = 100, fallarEnvioA = [] } = {}) {
     Utilities: {
       Charset: { UTF_8: 'UTF-8' },
       base64Encode: texto => bytes(texto).toString('base64'),
+      // Como en Apps Script: acepta bytes con signo y usa - y _ en lugar de + y /.
+      base64EncodeWebSafe: datos => Buffer.from(typeof datos === 'string' ? bytes(datos) : datos.map(b => b & 255))
+        .toString('base64').replace(/\+/g, '-').replace(/\//g, '_'),
       base64Decode: b64 => Array.from(Buffer.from(b64, 'base64')),
       newBlob: datos => ({
         getBytes: () => Array.from(typeof datos === 'string' ? bytes(datos) : Buffer.from(datos)),
@@ -77,7 +80,7 @@ function repartoDesdeCorreos(correos) {
   const reparto = {};
   for (const c of correos) {
     const da = c.body.match(/^¡Hola, (.+)!$/m)[1];
-    reparto[da] = c.body.match(/te ha tocado regalar a (.+)\.$/m)[1];
+    reparto[da] = c.body.match(/te ha tocado regalar a (.+)\.$/im)[1]; // con o sin rasca y gana
   }
   return reparto;
 }
@@ -512,7 +515,8 @@ test('el correo trae modo oscuro y todas sus clases tienen color en claro y en o
   const { html } = b.post({ clave: CLAVE, accion: 'vistaPrevia', ajustes: {
     titulo: 'Navidad', presupuesto: '20 €', fecha: '24 de diciembre', mensaje: 'Hola',
     lugar: { modo: 'direccion', nombre: 'Casa de Ana', direccion: 'c/ Falsa, 1' },
-  } });
+  }, urlRasca: 'https://alguien.github.io/amigo-invisible/rasca.html' });
+  assert.ok(html.includes('Rasca aquí'), 'con el rasca, para revisar también sus colores');
   assert.ok(html.includes('<meta name="color-scheme" content="light dark">'));
   assert.ok(html.includes('@media (prefers-color-scheme: dark)'));
   assert.match(html, /Amigo <em [^>]*>Invisible<\/em>/);
@@ -538,6 +542,93 @@ test('el correo trae modo oscuro y todas sus clases tienen color en claro y en o
   for (const m of html.matchAll(/<[a-z]+ class="[^"]+" style="([^"]*)"/g)) {
     assert.match(m[1], /(color|background-color|border-color):#[0-9a-f]{6};/);
   }
+});
+
+// ───────────────────────── Rasca y gana ─────────────────────────
+
+const Boleto = require('../js/boleto.js');
+const URL_RASCA = 'https://alguien.github.io/amigo-invisible/rasca.html';
+
+/** Saca del correo el enlace al rasca y lo lee como lo haría la página. */
+function boletoDelCorreo(html) {
+  const m = html.match(/href="(https:\/\/[^"#]+rasca\.html)#([^"]+)"/);
+  return m ? { url: m[1], datos: Boleto.leer(m[2]) } : null;
+}
+
+test('rasca y gana: el correo lleva el enlace y el nombre solo en la línea de respaldo del final', () => {
+  const b = crearBackend();
+  b.post(sorteoReal({ urlRasca: URL_RASCA, ajustes: { titulo: 'Navidad de prueba', presupuesto: '20 €', fecha: '24 de diciembre' } }));
+  assert.equal(b.correos.length, PARTICIPANTES.length);
+  const reparto = repartoDesdeCorreos(b.correos);
+  comprobarReparto(reparto, NOMBRES);
+
+  for (const c of b.correos) {
+    const da = c.body.match(/^¡Hola, (.+)!$/m)[1];
+    const recibe = reparto[da];
+    const enlace = boletoDelCorreo(c.htmlBody);
+    assert.ok(enlace, 'hay enlace al rasca');
+    assert.equal(enlace.url, URL_RASCA);
+    assert.deepEqual(enlace.datos, { de: da, a: recibe, titulo: 'Navidad de prueba', fecha: '24 de diciembre', presupuesto: '20 €' });
+    assert.ok(c.htmlBody.includes('Rasca aquí'));
+
+    // El nombre asignado aparece una sola vez, en la línea discreta de debajo de la estrella del pie
+    const apariciones = c.htmlBody.split(`>¿No se abre el rasca? Te ha tocado ${recibe}.<`).length - 1;
+    assert.equal(apariciones, 1);
+    assert.ok(c.htmlBody.indexOf('¿No se abre el rasca?') > c.htmlBody.lastIndexOf('&#10022;'), 'la línea va al final del todo');
+    assert.match(c.htmlBody, /class="ai-flojo" style="[^"]*font-style:italic;font-size:12px;/);
+    const sinRespaldo = c.htmlBody.replace(/¿No se abre el rasca\?[^<]*/, '');
+    assert.ok(!new RegExp(`>\\s*${recibe}\\s*<`).test(sinRespaldo), `${recibe} no debe verse en grande`);
+
+    // Texto plano: el enlace y, al final, el respaldo
+    assert.ok(c.body.includes(URL_RASCA + '#'));
+    assert.match(c.body, new RegExp(`¿No se abre el rasca\\? Te ha tocado regalar a ${recibe}\\.$`));
+  }
+});
+
+test('rasca y gana: solo se aceptan enlaces de GitHub Pages; si no, el nombre va en el correo como siempre', () => {
+  const malas = [
+    'http://alguien.github.io/amigo-invisible/rasca.html',
+    'https://otro-sitio.com/rasca.html',
+    'https://alguien.github.io.malo.com/rasca.html',
+    'https://alguien.github.io/amigo-invisible/otra.html',
+    'javascript:alert(1)//rasca.html',
+    'https://alguien.github.io/a"onmouseover="x/rasca.html',
+    'https://alguien.github.io/' + 'a/'.repeat(200) + 'rasca.html',
+  ];
+  for (const urlRasca of malas) {
+    const b = crearBackend();
+    b.post(sorteoReal({ urlRasca }));
+    for (const c of b.correos) {
+      assert.equal(boletoDelCorreo(c.htmlBody), null, urlRasca);
+      assert.ok(!c.htmlBody.includes('Rasca aquí'), urlRasca);
+      assert.ok(!c.htmlBody.includes('¿No se abre el rasca?'), urlRasca);
+    }
+    comprobarReparto(repartoDesdeCorreos(b.correos), NOMBRES);
+  }
+});
+
+test('rasca y gana: la propiedad URL_RASCA manda sobre lo que pida la app', () => {
+  const b = crearBackend();
+  b.propiedades.set('URL_RASCA', 'https://amigo.midominio.es/rasca.html');
+  b.post(sorteoReal({ urlRasca: URL_RASCA }));
+  assert.equal(boletoDelCorreo(b.correos[0].htmlBody).url, 'https://amigo.midominio.es/rasca.html');
+});
+
+test('rasca y gana: al reenviar se usa el mismo enlace del sorteo, aunque la app no lo mande', () => {
+  const b = crearBackend();
+  b.post(sorteoReal({ urlRasca: URL_RASCA }));
+  const original = b.correos.find(c => c.to === 'ana@example.com');
+  b.correos.length = 0;
+  b.post({ clave: CLAVE, accion: 'reenviar', nombre: 'Ana' });
+  assert.equal(b.correos.length, 1);
+  assert.equal(boletoDelCorreo(b.correos[0].htmlBody).url, URL_RASCA);
+  assert.deepEqual(boletoDelCorreo(b.correos[0].htmlBody).datos, boletoDelCorreo(original.htmlBody).datos);
+});
+
+test('rasca y gana: la vista previa también lo enseña', () => {
+  const b = crearBackend();
+  const { html } = b.post({ clave: CLAVE, accion: 'vistaPrevia', ajustes: { titulo: 'Navidad' }, urlRasca: URL_RASCA });
+  assert.deepEqual(boletoDelCorreo(html).datos, { de: 'Marta', a: 'Pablo', titulo: 'Navidad', fecha: '', presupuesto: '' });
 });
 
 test('vista previa del correo sin enviar nada', () => {

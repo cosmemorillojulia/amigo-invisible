@@ -15,6 +15,8 @@
  *   CLAVE         (obligatoria) Contraseña que escribirás en la app.
  *   EMAIL_PRUEBA  (opcional)    Dónde llegan los correos en modo prueba.
  *                               Por defecto, la propia cuenta que envía.
+ *   URL_RASCA     (opcional)    Dirección de rasca.html si no usas GitHub Pages
+ *                               (p. ej. con un dominio propio).
  */
 
 const MAX_PARTICIPANTES = 50;
@@ -121,7 +123,7 @@ function accionCargar_() {
 
 function accionVistaPrevia_(peticion) {
   const ajustes = validarAjustes_(peticion.ajustes);
-  const datos = { nombre: 'Marta', asignado: 'Pablo', ajustes: ajustes, prueba: false };
+  const datos = { nombre: 'Marta', asignado: 'Pablo', ajustes: ajustes, prueba: false, urlRasca: urlRasca_(peticion.urlRasca) };
   return { asunto: asunto_(ajustes), html: htmlCorreo_(datos) };
 }
 
@@ -176,7 +178,8 @@ function accionSortear_(peticion) {
       throw err;
     }
 
-    const sorteo = { fecha: new Date().toISOString(), ajustes: ajustes, participantes: participantes, destino: destino };
+    const urlRasca = urlRasca_(peticion.urlRasca);
+    const sorteo = { fecha: new Date().toISOString(), ajustes: ajustes, participantes: participantes, destino: destino, urlRasca: urlRasca };
     // Se guarda ANTES de enviar: así se puede reenviar a quien falle.
     if (!prueba) guardarSorteo_(sorteo);
 
@@ -185,7 +188,7 @@ function accionSortear_(peticion) {
     const fallidos = [];
     participantes.forEach((persona, i) => {
       try {
-        enviarCorreo_(persona, participantes[destino[i]].nombre, ajustes, destinoPrueba);
+        enviarCorreo_(persona, participantes[destino[i]].nombre, ajustes, destinoPrueba, urlRasca);
         enviados.push(persona.nombre);
       } catch (err) {
         fallidos.push({ nombre: persona.nombre, error: err.message });
@@ -214,7 +217,8 @@ function accionReenviar_(peticion) {
   }
 
   const persona = sorteo.participantes[i];
-  enviarCorreo_(persona, sorteo.participantes[sorteo.destino[i]].nombre, sorteo.ajustes, null);
+  const urlRasca = urlRasca_(sorteo.urlRasca || peticion.urlRasca);
+  enviarCorreo_(persona, sorteo.participantes[sorteo.destino[i]].nombre, sorteo.ajustes, null, urlRasca);
   return { reenviado: persona.nombre, email: persona.email };
 }
 
@@ -266,6 +270,20 @@ function validarLugar_(lugar) {
   if (l.modo === 'pendiente') return { modo: 'pendiente', nombre: '', direccion: '' };
   if (l.modo === 'direccion' && (nombre || direccion)) return { modo: 'direccion', nombre: nombre, direccion: direccion };
   return { modo: 'ninguno', nombre: '', direccion: '' };
+}
+
+/**
+ * Dirección de la página del rasca y gana (rasca.html en GitHub Pages).
+ * La manda la app, pero solo se acepta si es https://<usuario>.github.io/…/rasca.html,
+ * para que nadie pueda colar otro enlace en correos que salen de tu cuenta.
+ * Con un dominio propio, ponla en la propiedad del script URL_RASCA.
+ * Devuelve '' si no vale: entonces el correo muestra el nombre directamente.
+ */
+function urlRasca_(pedida) {
+  const propia = String(PropertiesService.getScriptProperties().getProperty('URL_RASCA') || '').trim();
+  if (/^https:\/\/[^\s"'<>#?]+$/.test(propia)) return propia;
+  const url = String(pedida == null ? '' : pedida).trim();
+  return /^https:\/\/[a-z0-9-]+\.github\.io\/[a-z0-9._~\/-]*rasca\.html$/i.test(url) && url.length <= 300 ? url : '';
 }
 
 /** El enlace siempre se construye aquí a partir del texto de la dirección. */
@@ -470,6 +488,30 @@ function barajar_(lista) {
 
 const EMOJI_CORREO = '🎁';
 
+/**
+ * Rasca y gana: el correo enlaza a rasca.html con los datos del boleto tras la #
+ * (esa parte del enlace nunca sale del navegador). Van mezclados con esta clave
+ * solo para que el nombre no se lea a simple vista en el enlace: NO es cifrado.
+ * Tiene que ser la misma que en js/boleto.js.
+ */
+const CLAVE_BOLETO = 'amigo-invisible/rasca';
+
+function codificarBoleto_(datos) {
+  const bytes = Utilities.newBlob(JSON.stringify(datos)).getBytes();
+  const mezclados = bytes.map((b, i) => {
+    const x = (b & 255) ^ CLAVE_BOLETO.charCodeAt(i % CLAVE_BOLETO.length);
+    return x > 127 ? x - 256 : x; // Apps Script trabaja con bytes con signo
+  });
+  return Utilities.base64EncodeWebSafe(mezclados).replace(/=+$/, '');
+}
+
+/** Enlace al rasca y gana de esta persona, o '' si no hay página del rasca. */
+function enlaceRasca_(d) {
+  if (!d.urlRasca) return '';
+  const a = d.ajustes;
+  return d.urlRasca + '#' + codificarBoleto_({ v: 1, de: d.nombre, a: d.asignado, t: a.titulo, f: a.fecha, p: a.presupuesto });
+}
+
 function asunto_(ajustes) {
   return `Tu amigo invisible · ${ajustes.titulo}`;
 }
@@ -478,8 +520,8 @@ function asuntoCorreo_(nombre, ajustes, prueba) {
   return prueba ? `[Prueba · ${nombre}] ${asunto_(ajustes)}` : asunto_(ajustes);
 }
 
-function enviarCorreo_(persona, asignado, ajustes, destinoPrueba) {
-  const datos = { nombre: persona.nombre, asignado: asignado, ajustes: ajustes, prueba: Boolean(destinoPrueba), emailReal: persona.email };
+function enviarCorreo_(persona, asignado, ajustes, destinoPrueba, urlRasca) {
+  const datos = { nombre: persona.nombre, asignado: asignado, ajustes: ajustes, prueba: Boolean(destinoPrueba), emailReal: persona.email, urlRasca: urlRasca || '' };
   MailApp.sendEmail({
     to: destinoPrueba || persona.email,
     subject: asuntoCorreo_(persona.nombre, ajustes, Boolean(destinoPrueba)),
@@ -504,7 +546,9 @@ function textoCorreo_(d) {
   if (d.prueba) lineas.push(`(Esto es una prueba. En el sorteo de verdad, este correo le llegaría a ${d.nombre}, ${d.emailReal}.)`, '');
   lineas.push(`¡Hola, ${d.nombre}!`, '');
   if (a.mensaje) lineas.push(a.mensaje, '');
-  lineas.push(`Ya está hecho el sorteo y te ha tocado regalar a ${d.asignado}.`);
+  const enlace = enlaceRasca_(d);
+  if (enlace) lineas.push('Ya está hecho el sorteo. Rasca aquí para descubrir a quién te toca regalar:', enlace);
+  else lineas.push(`Ya está hecho el sorteo y te ha tocado regalar a ${d.asignado}.`);
   const detalles = [];
   if (a.fecha) detalles.push(`Fecha: ${a.fecha}`);
   if (a.presupuesto) detalles.push(`Presupuesto: ${a.presupuesto}`);
@@ -515,6 +559,7 @@ function textoCorreo_(d) {
     if (lugar.direccion) detalles.push('Mapa: ' + enlaceMapa_(lugar.direccion));
   }
   if (detalles.length) lineas.push('', ...detalles);
+  if (enlace) lineas.push('', `¿No se abre el rasca? Te ha tocado regalar a ${d.asignado}.`);
   return lineas.join('\n');
 }
 
@@ -542,6 +587,14 @@ const COLORES_CORREO = {
   oro:           ['color', '#94733d', '#c4a46a'],
   borde:         ['border-color', '#e3d8c4', '#2c4139'],
   aviso:         ['border-color', '#b08d52', '#c4a46a'],
+  // La tarjeta de «Rasca aquí»: verde oscuro y dorado, como la cabecera. Una tarjeta dorada con
+  // letras oscuras quedaba ilegible en el modo oscuro de Gmail en Android (aclara las letras y no el fondo).
+  rasca:         ['background-color', '#13241e', '#1a3029'],
+  'rasca-borde': ['border-color', '#b08d52', '#c4a46a'],
+  'rasca-texto': ['color', '#e6cf98', '#e6cf98'],
+  'rasca-adorno': ['color', '#b08d52', '#c4a46a'],
+  // La línea de respaldo del final: a propósito, que apenas se note.
+  flojo:         ['color', '#aca293', '#5d6b64'],
 };
 
 /** class + style en línea (en claro) para uno o varios papeles: atributos(['papel'], 'padding:0;') */
@@ -629,6 +682,29 @@ function htmlCorreo_(d) {
     .map(t => `<p ${at(['tinta'], parrafo)}>${e(t).replace(/\n/g, '<br>')}</p>`)
     .join('\n          ');
 
+  // Con página del rasca: tarjeta dorada que lleva a rascar, y el nombre solo en una línea discreta al final.
+  // Sin ella: el nombre directamente, como siempre.
+  const enlace = enlaceRasca_(d);
+  const adorno = `<span ${at(['rasca-adorno'], 'display:block;font-size:10px;line-height:1;letter-spacing:6px;')}>&#10022;&#10022;&#10022;&#10022;&#10022;&#10022;&#10022;&#10022;&#10022;</span>`;
+  const bloqueNombre = enlace
+    ? `<div style="font-size:34px;line-height:1;">${EMOJI_CORREO}</div>
+              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:300px;margin:18px auto 0;"><tr>
+                <td ${at(['rasca', 'rasca-borde'], 'border:1px solid;border-radius:12px;')}>
+                  <a href="${e(enlace)}" target="_blank" ${at(['rasca-texto'], `display:block;padding:20px 12px;text-align:center;text-decoration:none;font-family:${sans};`)}>
+                    ${adorno}
+                    <span style="display:block;margin:14px 0;font-size:17px;font-weight:bold;letter-spacing:4px;text-transform:uppercase;">Rasca aquí</span>
+                    ${adorno}
+                  </a>
+                </td>
+              </tr></table>
+              <div ${at(['suave'], `margin-top:12px;font-family:${serif};font-style:italic;font-size:14px;`)}>Púlsalo y rasca con el dedo.</div>`
+    : `<div style="font-size:34px;line-height:1;">${EMOJI_CORREO}</div>
+              <div ${at(['nombre'], `margin-top:14px;font-family:${serif};font-style:italic;font-size:42px;line-height:1.15;word-break:break-word;`)}>${e(d.asignado)}</div>
+              <div ${at(['raya'], 'width:48px;height:1px;margin:20px auto 0;font-size:0;line-height:1px;')}>&nbsp;</div>`;
+  const respaldo = enlace
+    ? `<tr><td ${at(['flojo'], `padding:14px 0 0;text-align:center;font-family:${serif};font-style:italic;font-size:12px;line-height:1.5;`)}>¿No se abre el rasca? Te ha tocado ${e(d.asignado)}.</td></tr>`
+    : '';
+
   return `<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -655,14 +731,13 @@ function htmlCorreo_(d) {
           <p ${at(['tinta'], parrafo + 'margin-bottom:0;')}>Ya está hecho el sorteo y este año te toca regalar a…</p>
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:26px 0 ${filas.length ? 30 : 0}px;"><tr>
             <td style="padding:6px 4px 0;text-align:center;">
-              <div style="font-size:34px;line-height:1;">${EMOJI_CORREO}</div>
-              <div ${at(['nombre'], `margin-top:14px;font-family:${serif};font-style:italic;font-size:42px;line-height:1.15;word-break:break-word;`)}>${e(d.asignado)}</div>
-              <div ${at(['raya'], 'width:48px;height:1px;margin:20px auto 0;font-size:0;line-height:1px;')}>&nbsp;</div>
+              ${bloqueNombre}
             </td>
           </tr></table>
           ${bloqueDatos}
         </td></tr>
         <tr><td ${at(['oro'], `padding:20px 0 0;text-align:center;font-family:${serif};font-size:15px;`)}>&#10022;</td></tr>
+        ${respaldo}
       </table>
     </td></tr>
   </table>
@@ -687,5 +762,5 @@ function comprobarConfiguracion() {
 /** Manda un correo de muestra SOLO a tu propia cuenta (o a EMAIL_PRUEBA) para ver el diseño. */
 function enviarCorreoDeMuestra() {
   const ajustes = validarAjustes_({ presupuesto: '20 €', fecha: '24 de diciembre', mensaje: 'Esto es un correo de muestra.' });
-  enviarCorreo_({ nombre: 'Marta', email: emailPrueba_() }, 'Pablo', ajustes, emailPrueba_());
+  enviarCorreo_({ nombre: 'Marta', email: emailPrueba_() }, 'Pablo', ajustes, emailPrueba_(), urlRasca_(''));
 }

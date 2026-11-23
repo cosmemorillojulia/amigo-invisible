@@ -17,6 +17,7 @@ Móvil ──(lista + clave)──▶ Apps Script ──▶ sorteo (+ reglas pri
 - **Protección contra repeticiones**: no deja repetir un sorteo real sin avisar antes.
 - **Reenvío** del correo a quien no le haya llegado, con la misma persona y, si hace falta, a otra dirección.
 - **Lista en la nube**: prepárala en el ordenador y haz el sorteo desde el móvil.
+- **Rasca y gana**: el correo no dice el nombre a la primera. Trae una tarjeta «Rasca aquí» que abre un boleto para rascar con el dedo (ver más abajo).
 - **Vista previa** del correo y opción de instalar la app en la pantalla de inicio.
 - **Opciones del organizador** (privadas):
   - Exclusiones: parejas que no se pueden tocar entre sí.
@@ -112,6 +113,15 @@ Se abre el navegador con el correo en tamaño móvil y ordenador.
 
 Cuando te guste, pega el `Code.gs` nuevo en Apps Script y publica una **nueva versión** (ver el aviso del paso 1).
 
+## Rasca y gana
+
+En el correo, en lugar del nombre, sale una tarjeta **«Rasca aquí»**. Al pulsarla se abre [`rasca.html`](rasca.html), en tu GitHub Pages, con un boleto que se rasca con el dedo (o con el ratón, que hace de moneda).
+- Al final del correo, en pequeño y sin llamar la atención, va también el nombre, por si el enlace no se abre.
+- El nombre viaja en el enlace detrás de la `#`, que el navegador no envía a ningún sitio (GitHub no lo ve), y mezclado para que no se lea a simple vista. No es cifrado: quien tenga el correo puede verlo, igual que antes.
+- Por seguridad, el servidor solo pone enlaces a `https://…github.io/…/rasca.html`. Si usas un dominio propio, añade en Apps Script la propiedad `URL_RASCA` con la dirección de tu `rasca.html`.
+- Si la app se abre desde otro sitio (por ejemplo, en tu ordenador), el correo sale como antes, con el nombre a la vista.
+- Para probarlo: *Ajustes → Ver cómo queda el correo* y pulsa en «Rasca aquí» (es un boleto de ejemplo, Marta → Pablo). También desde `node herramientas/vista-correo.js`.
+
 ## Límites
 
 - Una cuenta gratuita de Gmail puede mandar unos **100 correos al día** desde Apps Script. La app avisa si no quedan suficientes.
@@ -133,6 +143,9 @@ css/estilos.css         Estilos
 js/app.js               Lógica de la web
 js/sorteo.js            Algoritmo del sorteo (para comprobar las reglas en el panel privado)
 js/config.js            URL del servidor
+rasca.html              Rasca y gana que abre el enlace del correo
+css/rasca.css, js/rasca.js  Estilos y lógica del rasca y gana
+js/boleto.js            Lee el boleto que va en el enlace del rasca
 backend/Code.gs         Servidor: sorteo, reglas privadas y envío de correos
 backend/appsscript.json Manifiesto con los permisos mínimos
 herramientas/           Vista previa del correo en directo

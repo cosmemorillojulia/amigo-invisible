@@ -32,8 +32,14 @@ const EJEMPLO = {
   lugarDireccion: 'c/ Cerro del Fresno, 15, Madrid',
 };
 
+// Lo poco de Apps Script que hace falta para pintar el correo (el enlace del rasca).
+const Utilities = {
+  newBlob: texto => ({ getBytes: () => Array.from(Buffer.from(String(texto), 'utf8')) }),
+  base64EncodeWebSafe: bytes => Buffer.from(bytes.map(b => b & 255)).toString('base64').replace(/\+/g, '-').replace(/\//g, '_'),
+};
+
 function cargarCodigo() {
-  const contexto = { console };
+  const contexto = { console, Utilities };
   vm.createContext(contexto);
   vm.runInContext(fs.readFileSync(CODIGO, 'utf8'), contexto, { filename: 'Code.gs' });
   return contexto;
@@ -68,7 +74,9 @@ function renderizar(parametros) {
     mensaje: valor('mensaje'),
     lugar: { modo: valor('lugarModo'), nombre: valor('lugarNombre'), direccion: valor('lugarDireccion') },
   });
-  const datos = { nombre: valor('nombre'), asignado: valor('asignado'), ajustes, prueba, emailReal: 'lucia@ejemplo.com' };
+  // El rasca se sirve desde aquí mismo, así se puede probar pulsando en la tarjeta dorada.
+  const urlRasca = parametros.get('sinRasca') === '1' ? '' : `http://localhost:${PUERTO}/rasca.html`;
+  const datos = { nombre: valor('nombre'), asignado: valor('asignado'), ajustes, prueba, emailReal: 'lucia@ejemplo.com', urlRasca };
   return {
     asunto: gs.asuntoCorreo_(datos.nombre, ajustes, prueba),
     html: aplicarModo(gs.htmlCorreo_(datos), parametros.get('modo'), emoji),
@@ -117,6 +125,7 @@ const PAGINA = `<!doctype html>
   <label>Calle<input type="text" id="lugarDireccion" style="width:220px"></label>
   <label>Mensaje para todos<textarea id="mensaje"></textarea></label>
   <label>Modo<select id="modo"><option value="claro">Claro</option><option value="oscuro">Oscuro (iPhone, Outlook)</option><option value="gmail">Oscuro de Gmail (aproximado)</option></select></label>
+  <label class="check"><input type="checkbox" id="sinRasca"> Sin rasca</label>
   <label class="check"><input type="checkbox" id="prueba"> Versión de prueba</label>
   <label class="check"><input type="checkbox" id="texto"> Texto plano</label>
   <span class="estado" id="estado"></span>
@@ -136,6 +145,7 @@ const PAGINA = `<!doctype html>
     var p = new URLSearchParams();
     CAMPOS.forEach(function (c) { p.set(c, $(c).value); });
     p.set('modo', $('modo').value);
+    p.set('sinRasca', $('sinRasca').checked ? '1' : '0');
     p.set('prueba', $('prueba').checked ? '1' : '0');
     p.set('texto', $('texto').checked ? '1' : '0');
     return p.toString();
@@ -172,6 +182,16 @@ const servidor = http.createServer((req, res) => {
   if (url.pathname === '/') {
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8' });
     return res.end(PAGINA);
+  }
+
+  // La página del rasca y lo que necesita (solo estas carpetas, nada más del proyecto)
+  if (url.pathname === '/rasca.html' || /^\/(css|js|img)\/[\w.-]+$/.test(url.pathname)) {
+    const raiz = path.join(__dirname, '..');
+    const archivo = path.join(raiz, url.pathname);
+    const tipos = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.png': 'image/png' };
+    if (!archivo.startsWith(raiz + path.sep) || !fs.existsSync(archivo)) { res.writeHead(404); return res.end(); }
+    res.writeHead(200, { 'Content-Type': (tipos[path.extname(archivo)] || 'application/octet-stream') + '; charset=utf-8', 'Cache-Control': 'no-store' });
+    return fs.createReadStream(archivo).pipe(res);
   }
 
   if (url.pathname === '/eventos') {

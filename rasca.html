@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="robots" content="noindex, nofollow">
+  <meta name="referrer" content="no-referrer">
+  <title>Tu amigo invisible</title>
+  <meta name="theme-color" content="#0d1915">
+  <link rel="icon" href="img/icono.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="img/icono-180.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..600;1,9..144,300..600&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/rasca.css">
+</head>
+<body>
+  <svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+    <symbol id="i-sonido" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="M15.5 8.5a5 5 0 0 1 0 7M18.5 5.5a9 9 0 0 1 0 13"/></symbol>
+    <symbol id="i-silencio" viewBox="0 0 24 24"><path d="M11 5 6 9H3v6h3l5 4V5Z"/><path d="m22 9-6 6M16 9l6 6"/></symbol>
+  </svg>
+
+  <button type="button" class="boton-sonido" id="btn-sonido" aria-pressed="true" aria-label="Quitar el sonido" hidden>
+    <svg class="icono" aria-hidden="true"><use href="#i-sonido"/></svg>
+  </button>
+
+  <main class="escena" id="escena" hidden>
+    <header class="encabezado">
+      <h1 class="saludo" id="saludo">Hola.</h1>
+      <p class="intro">Tienes un boleto sin rascar.</p>
+    </header>
+
+    <div class="boleto-sombra">
+      <article class="boleto" id="boleto" aria-label="Boleto del amigo invisible">
+        <div class="boleto-cabecera">
+          <span class="marca">Amigo Invisible</span>
+          <span class="numero" id="numero"></span>
+        </div>
+        <p class="boleto-titulo" id="boleto-titulo"></p>
+
+        <div class="zona" id="zona">
+          <div class="premio" id="premio" aria-hidden="true">
+            <span class="premio-etiqueta">Te toca regalar a</span>
+            <span class="premio-nombre" id="nombre"></span>
+          </div>
+          <canvas class="capa" id="capa" aria-hidden="true"></canvas>
+          <span class="pista" id="pista" aria-hidden="true"></span>
+        </div>
+
+        <div class="boleto-pie" id="pie">
+          <dl class="detalles" id="detalles"></dl>
+          <p class="letra-pequena">Boleto personal e intransferible. Prohibido chivarse.</p>
+        </div>
+      </article>
+    </div>
+
+    <p class="estado" id="estado" role="status" aria-live="polite"></p>
+    <p class="solo-lector" id="anuncio" aria-live="assertive"></p>
+    <div class="acciones">
+      <button type="button" class="enlace" id="btn-destapar">Destapar sin rascar</button>
+      <button type="button" class="enlace" id="btn-tapar" hidden>Tapar otra vez</button>
+    </div>
+  </main>
+
+  <main class="escena roto" id="roto" hidden>
+    <h1 class="saludo">Vaya.</h1>
+    <p class="intro">Este enlace ha llegado incompleto y no se puede leer el boleto.</p>
+    <p class="intro">Vuelve al correo y pulsa otra vez en «Rasca aquí». Si sigue sin funcionar, mira al final del correo: ahí también pone a quién te toca.</p>
+  </main>
+
+  <canvas class="virutas" id="virutas" aria-hidden="true"></canvas>
+
+  <script src="js/boleto.js"></script>
+  <script src="js/rasca.js"></script>
+</body>
+</html>
