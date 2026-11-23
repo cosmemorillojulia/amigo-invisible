@@ -201,7 +201,45 @@ select {
 }
 select option { background: var(--fondo-2); color: var(--texto); }
 
-.campos-par { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+/* Fecha: el campo entero abre el calendario del sistema */
+.selector-fecha {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 50px;
+  padding: 12px 14px;
+  background: rgba(0, 0, 0, .2);
+  border: 1px solid var(--linea-2);
+  border-radius: 10px;
+  cursor: pointer;
+  transition: border-color .2s, box-shadow .2s;
+}
+.selector-fecha:hover { border-color: var(--texto-3); }
+.selector-fecha:focus-within { border-color: var(--oro); box-shadow: 0 0 0 3px var(--oro-2); }
+.selector-fecha > .icono { color: var(--oro); }
+.fecha-texto { flex: 1; min-width: 0; }
+.fecha-texto.vacia { color: var(--texto-3); }
+.selector-fecha input[type=date] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  opacity: 0;
+  cursor: pointer;
+}
+.selector-fecha input[type=date]::-webkit-calendar-picker-indicator {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  cursor: pointer;
+}
 
 .con-boton { position: relative; display: block; }
 .con-boton input { padding-right: 52px; }

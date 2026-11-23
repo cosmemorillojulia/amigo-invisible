@@ -31,10 +31,41 @@
     return Date.now().toString(36) + Math.random().toString(36).slice(2, 8);
   }
 
+  // ── Fechas: se guardan como 'AAAA-MM-DD' y se muestran en castellano ──
+
+  function fechaDesdeIso(iso) {
+    const partes = /^(\d{4})-(\d{2})-(\d{2})$/.exec(iso || '');
+    if (!partes) return null;
+    const fecha = new Date(Number(partes[1]), Number(partes[2]) - 1, Number(partes[3]));
+    return isNaN(fecha) ? null : fecha;
+  }
+
+  function fechaPorDefecto() {
+    return new Date().getFullYear() + '-12-24';
+  }
+
+  /** «Jueves, 24 de diciembre de 2026» (para el campo de Ajustes). */
+  function fechaLarga(iso) {
+    const fecha = fechaDesdeIso(iso);
+    if (!fecha) return '';
+    const texto = fecha.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+    return texto.charAt(0).toUpperCase() + texto.slice(1);
+  }
+
+  /** «24 de diciembre» (con el año solo si no es el actual), para el correo y el resumen. */
+  function fechaCorta(iso) {
+    const fecha = fechaDesdeIso(iso);
+    if (!fecha) return '';
+    const opciones = { day: 'numeric', month: 'long' };
+    if (fecha.getFullYear() !== new Date().getFullYear()) opciones.year = 'numeric';
+    return fecha.toLocaleDateString('es-ES', opciones);
+  }
+
   function datosIniciales() {
     return {
+      version: 2,
       participantes: [],
-      ajustes: { titulo: 'Navidad ' + new Date().getFullYear(), presupuesto: '', fecha: '', mensaje: '' },
+      ajustes: { titulo: 'Navidad ' + new Date().getFullYear(), presupuesto: '', fecha: fechaPorDefecto(), mensaje: '' },
     };
   }
 
@@ -46,12 +77,17 @@
       .map(p => ({ id: String(p.id || nuevoId()), nombre: String(p.nombre).trim(), email: String(p.email || '').trim() }));
     const a = bruto.ajustes || {};
     const texto = (v, porDefecto) => (typeof v === 'string' ? v : porDefecto);
+    // Fechas de versiones anteriores (texto libre o vacío) pasan al 24 de diciembre.
+    // Desde la versión 2, una fecha vacía significa que se ha borrado a propósito.
+    let fecha = typeof a.fecha === 'string' && fechaDesdeIso(a.fecha) ? a.fecha : null;
+    if (fecha === null) fecha = bruto.version >= 2 && a.fecha === '' ? '' : base.ajustes.fecha;
     return {
+      version: 2,
       participantes,
       ajustes: {
         titulo: texto(a.titulo, base.ajustes.titulo),
         presupuesto: texto(a.presupuesto, ''),
-        fecha: texto(a.fecha, ''),
+        fecha,
         mensaje: texto(a.mensaje, ''),
       },
     };
@@ -312,13 +348,44 @@
 
   // ───────────────────────── Ajustes ─────────────────────────
 
-  [['#aj-titulo', 'titulo'], ['#aj-presupuesto', 'presupuesto'], ['#aj-fecha', 'fecha'], ['#aj-mensaje', 'mensaje']].forEach(([selector, campo]) => {
+  [['#aj-titulo', 'titulo'], ['#aj-presupuesto', 'presupuesto'], ['#aj-mensaje', 'mensaje']].forEach(([selector, campo]) => {
     $(selector).addEventListener('input', ev => {
       datos.ajustes[campo] = ev.target.value;
       guardar();
       renderCabecera();
     });
   });
+
+  function cambiarFecha(ev) {
+    const valor = ev.target.value;
+    if (valor && !fechaDesdeIso(valor)) return;
+    datos.ajustes.fecha = valor;
+    guardar();
+    renderFecha();
+  }
+  $('#aj-fecha').addEventListener('input', cambiarFecha);
+  $('#aj-fecha').addEventListener('change', cambiarFecha);
+
+  // En el ordenador, un clic en cualquier parte del campo abre el calendario.
+  // En el móvil ya lo abre el propio sistema al tocarlo.
+  $('#aj-fecha').addEventListener('click', ev => {
+    if (window.matchMedia('(pointer: coarse)').matches) return;
+    try { ev.currentTarget.showPicker(); } catch (e) { /* navegador sin showPicker: se usa el comportamiento normal */ }
+  });
+
+  function renderFecha() {
+    const input = $('#aj-fecha');
+    if (document.activeElement !== input) input.value = datos.ajustes.fecha;
+    const texto = $('#aj-fecha-texto');
+    texto.textContent = fechaLarga(datos.ajustes.fecha) || 'Sin fecha';
+    texto.classList.toggle('vacia', !datos.ajustes.fecha);
+    input.setAttribute('aria-label', 'Fecha: ' + (fechaLarga(datos.ajustes.fecha) || 'sin fecha'));
+  }
+
+  /** Ajustes tal y como se mandan al servidor (con la fecha ya en texto). */
+  function ajustesParaCorreo() {
+    return Object.assign({}, datos.ajustes, { fecha: fechaCorta(datos.ajustes.fecha) });
+  }
 
   $('#aj-clave').addEventListener('input', ev => {
     clave = ev.target.value;
@@ -344,7 +411,7 @@
     const asignar = (selector, valor) => { if (document.activeElement !== $(selector)) $(selector).value = valor; };
     asignar('#aj-titulo', a.titulo);
     asignar('#aj-presupuesto', a.presupuesto);
-    asignar('#aj-fecha', a.fecha);
+    renderFecha();
     asignar('#aj-mensaje', a.mensaje);
     asignar('#aj-clave', clave);
     $('#aj-recordar').checked = Boolean(leerLocal(LS_CLAVE));
@@ -433,7 +500,7 @@
 
   $('#btn-vista-previa').addEventListener('click', ev => conBoton(ev.currentTarget, async () => {
     try {
-      const r = await llamar('vistaPrevia', { ajustes: datos.ajustes });
+      const r = await llamar('vistaPrevia', { ajustes: ajustesParaCorreo() });
       $('#previa-asunto').textContent = 'Asunto: ' + r.asunto;
       $('#previa-iframe').srcdoc = r.html;
       $('#dlg-previa').showModal();
@@ -622,7 +689,7 @@
     const n = datos.participantes.length;
     const partes = [plural(n, 'persona', 'personas')];
     if (a.presupuesto.trim()) partes.push(a.presupuesto.trim());
-    if (a.fecha.trim()) partes.push(a.fecha.trim());
+    if (fechaCorta(a.fecha)) partes.push(fechaCorta(a.fecha));
     $('#resumen').textContent = partes.join(' · ');
 
     const prueba = modoActual() === 'prueba';
@@ -688,7 +755,7 @@
     try {
       const r = await llamar('sortear', {
         participantes: datos.participantes.map(p => ({ nombre: p.nombre, email: p.email })),
-        ajustes: datos.ajustes,
+        ajustes: ajustesParaCorreo(),
         prueba,
         repetir: repetir === true,
       });
