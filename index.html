@@ -30,6 +30,7 @@
     <symbol id="i-flecha" viewBox="0 0 24 24"><path d="m9 18 6-6-6-6"/></symbol>
     <symbol id="i-ojo" viewBox="0 0 24 24"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></symbol>
     <symbol id="i-check" viewBox="0 0 24 24"><path d="M20 6 9 17l-5-5"/></symbol>
+    <symbol id="i-mapa" viewBox="0 0 24 24"><path d="M20 10c0 6-8 12-8 12s-8-6-8-12a8 8 0 0 1 16 0Z"/><circle cx="12" cy="10" r="3"/></symbol>
     <symbol id="i-calendario" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></symbol>
     <symbol id="i-estrella" viewBox="0 0 24 24"><path fill="currentColor" stroke="none" d="M12 3c.7 5.6 2.4 7.3 9 9-6.6 1.7-8.3 3.4-9 9-.7-5.6-2.4-7.3-9-9 6.6-1.7 8.3-3.4 9-9Z"/></symbol>
   </svg>
@@ -37,7 +38,7 @@
   <canvas id="nieve" aria-hidden="true"></canvas>
 
   <header class="cabecera">
-    <p class="antetitulo" id="antetitulo">Navidad</p>
+    <svg class="icono ornamento" aria-hidden="true"><use href="#i-estrella"/></svg>
     <h1 class="titulo">Amigo <em>invisible</em></h1>
   </header>
 
@@ -125,7 +126,8 @@
       <div class="panel">
         <h3 class="etiqueta">El evento</h3>
         <label class="campo"><span>Título</span>
-          <input id="aj-titulo" maxlength="60" placeholder="Navidad">
+          <input id="aj-titulo" maxlength="60" aria-describedby="aj-titulo-ayuda">
+          <small class="ayuda" id="aj-titulo-ayuda"></small>
         </label>
         <div class="campo"><span id="t-fecha">Fecha</span>
           <button type="button" class="selector-fecha" id="aj-fecha" aria-haspopup="dialog" aria-labelledby="t-fecha aj-fecha-texto">
@@ -134,11 +136,31 @@
             <span class="fecha-cambiar" aria-hidden="true">Cambiar</span>
           </button>
         </div>
+        <div class="campo"><span id="t-lugar">Lugar</span>
+          <div class="segmentado segmentado-3" role="radiogroup" aria-labelledby="t-lugar">
+            <label><input type="radio" name="lugar-modo" value="ninguno"><span>No mostrar</span></label>
+            <label><input type="radio" name="lugar-modo" value="pendiente"><span>Por definir</span></label>
+            <label><input type="radio" name="lugar-modo" value="direccion"><span>Dirección</span></label>
+          </div>
+          <small class="ayuda" id="lugar-ayuda"></small>
+        </div>
+        <div class="lugar-detalle" id="lugar-detalle" hidden>
+          <label class="campo"><span>Nombre del sitio (opcional)</span>
+            <input id="aj-lugar-nombre" maxlength="60" placeholder="Casa de Ana" autocapitalize="sentences">
+          </label>
+          <label class="campo"><span>Calle</span>
+            <input id="aj-lugar-direccion" maxlength="120" placeholder="c/ Cerro del Fresno, 15, Madrid" autocomplete="street-address" aria-describedby="lugar-ayuda-calle">
+            <small class="ayuda" id="lugar-ayuda-calle">Pon también la ciudad para que Google Maps la encuentre a la primera.</small>
+          </label>
+          <a class="enlace-mapa" id="aj-lugar-mapa" target="_blank" rel="noopener" hidden>
+            <svg class="icono" aria-hidden="true"><use href="#i-mapa"/></svg>Comprobar en Google Maps
+          </a>
+        </div>
         <label class="campo"><span>Presupuesto</span>
           <input id="aj-presupuesto" maxlength="40" placeholder="20 €">
         </label>
         <label class="campo"><span>Mensaje para todos (opcional)</span>
-          <textarea id="aj-mensaje" maxlength="600" rows="3" placeholder="Lo que quieras que lean todos en el correo"></textarea>
+          <textarea id="aj-mensaje" maxlength="600" rows="4" placeholder="Sale al final del correo tal cual lo escribas. Deja una línea en blanco para separar párrafos."></textarea>
         </label>
         <button class="boton boton-secundario boton-ancho" id="btn-vista-previa" type="button">Ver cómo queda el correo</button>
       </div>

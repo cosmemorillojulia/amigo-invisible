@@ -330,6 +330,74 @@ test('guardar y cargar la lista (sin exclusiones)', () => {
   assert.equal(b.post({ clave: CLAVE, accion: 'estado' }).hayListaGuardada, true);
 });
 
+test('el correo no lleva frases genéricas y el mensaje del organizador va como texto normal', () => {
+  const b = crearBackend();
+  const mensaje = 'Primera línea\nsegunda línea\n\nOtro párrafo <b>sin</b> HTML';
+  const { html } = b.post({ clave: CLAVE, accion: 'vistaPrevia', ajustes: { titulo: 'Cumple de Ana', mensaje } });
+  for (const generica of ['Feliz Navidad', 'pierde la gracia', 'Piensa en algo']) assert.ok(!html.includes(generica), `sobra «${generica}»`);
+  const parrafos = [...html.matchAll(/<p style="([^"]*)">([\s\S]*?)<\/p>/g)].map(m => ({ estilo: m[1], texto: m[2] }));
+  const primero = parrafos.find(p => p.texto.includes('Primera línea'));
+  const segundo = parrafos.find(p => p.texto.includes('Otro párrafo'));
+  assert.equal(primero.texto, 'Primera línea<br>segunda línea');
+  assert.equal(segundo.texto, 'Otro párrafo &lt;b&gt;sin&lt;/b&gt; HTML');
+  for (const p of [primero, segundo]) assert.ok(!p.estilo.includes('italic') && !p.estilo.includes('border-left'), 'sin formato de cita');
+
+  // Sin mensaje no queda ningún párrafo extra después de los datos
+  const sinMensaje = b.post({ clave: CLAVE, accion: 'vistaPrevia', ajustes: { presupuesto: '20 €' } }).html;
+  assert.ok(!sinMensaje.includes('Otro párrafo'));
+  const textoPlano = b.post({ clave: CLAVE, accion: 'vistaPrevia', ajustes: {} });
+  assert.equal(textoPlano.ok, true);
+});
+
+test('lugar: no mostrar, por definir o dirección con enlace a Google Maps', () => {
+  const b = crearBackend();
+  const previa = lugar => b.post({ clave: CLAVE, accion: 'vistaPrevia', ajustes: { presupuesto: '20 €', fecha: '24 de diciembre', lugar } }).html;
+
+  // No mostrar (por defecto, o con un modo desconocido)
+  for (const lugar of [undefined, { modo: 'ninguno', nombre: 'Casa de Ana' }, { modo: 'raro' }]) {
+    assert.ok(!previa(lugar).includes('>Lugar<'), JSON.stringify(lugar));
+  }
+
+  // Por definir
+  const pendiente = previa({ modo: 'pendiente', nombre: 'Casa de Ana', direccion: 'c/ Falsa, 1' });
+  assert.ok(pendiente.includes('>Lugar<') && pendiente.includes('Por definir'));
+  assert.ok(!pendiente.includes('google.com/maps') && !pendiente.includes('Casa de Ana'));
+
+  // Dirección con nombre: la calle enlaza a Maps (URL construida en el servidor y bien escapada)
+  const conNombre = previa({ modo: 'direccion', nombre: 'Casa de Ana', direccion: 'c/ Cerro del Fresno, 15, Madrid' });
+  assert.ok(conNombre.includes('>Lugar<') && conNombre.includes('Casa de Ana'));
+  assert.ok(conNombre.includes('href="https://www.google.com/maps/search/?api=1&amp;query=c%2F%20Cerro%20del%20Fresno%2C%2015%2C%20Madrid"'));
+  assert.ok(conNombre.includes('>c/ Cerro del Fresno, 15, Madrid</a>'));
+
+  // Solo nombre: sin enlace
+  const soloNombre = previa({ modo: 'direccion', nombre: 'Casa de Ana', direccion: '' });
+  assert.ok(soloNombre.includes('Casa de Ana') && !soloNombre.includes('google.com/maps'));
+
+  // Dirección vacía y sin nombre = no mostrar
+  assert.ok(!previa({ modo: 'direccion', nombre: ' ', direccion: '' }).includes('>Lugar<'));
+
+  // Nada de HTML ni enlaces colados desde la dirección
+  const malicioso = previa({ modo: 'direccion', direccion: '"><script>alert(1)</script> javascript:alert(1)' });
+  assert.ok(!malicioso.includes('<script>'));
+  assert.ok(malicioso.includes('href="https://www.google.com/maps/search/?api=1&amp;query=%22%3E%3Cscript%3E'));
+
+  // Sin presupuesto ni fecha, el lugar va solo en la caja
+  const soloLugar = b.post({ clave: CLAVE, accion: 'vistaPrevia', ajustes: { lugar: { modo: 'pendiente' } } }).html;
+  assert.ok(soloLugar.includes('colspan="1"') && !soloLugar.includes('>Fecha<'));
+});
+
+test('el lugar llega en el correo real y en el texto plano, también al reenviar', () => {
+  const b = crearBackend();
+  b.post(sorteoReal({ ajustes: { titulo: 'Navidad', lugar: { modo: 'direccion', nombre: 'Casa de Ana', direccion: 'c/ Cerro del Fresno, 15' } } }));
+  const correo = b.correos[0];
+  assert.ok(correo.htmlBody.includes('Casa de Ana'));
+  assert.ok(correo.body.includes('Lugar: Casa de Ana, c/ Cerro del Fresno, 15'));
+  assert.ok(correo.body.includes('Mapa: https://www.google.com/maps/search/?api=1&query=c%2F%20Cerro%20del%20Fresno%2C%2015'));
+  b.correos.length = 0;
+  b.post({ clave: CLAVE, accion: 'reenviar', nombre: 'Ana' });
+  assert.ok(b.correos[0].htmlBody.includes('Casa de Ana'));
+});
+
 test('vista previa del correo sin enviar nada', () => {
   const b = crearBackend();
   const r = b.post({ clave: CLAVE, accion: 'vistaPrevia', ajustes: { titulo: 'Navidad 2026', presupuesto: '15 €', fecha: '24 de diciembre' } });

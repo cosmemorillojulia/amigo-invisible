@@ -40,8 +40,20 @@
     return isNaN(fecha) ? null : fecha;
   }
 
+  /** La próxima Nochebuena (la de este año o, si ya ha pasado, la del siguiente). */
   function fechaPorDefecto() {
-    return new Date().getFullYear() + '-12-24';
+    return aIso(proximaFecha(11, 24));
+  }
+
+  /** «Navidad 2026»: el año sale de la fecha elegida (Reyes cuenta como la Navidad del año anterior). */
+  function tituloAutomatico() {
+    const fecha = fechaDesdeIso(datos.ajustes.fecha);
+    const anio = fecha ? fecha.getFullYear() - (fecha.getMonth() === 0 ? 1 : 0) : new Date().getFullYear();
+    return 'Navidad ' + anio;
+  }
+
+  function tituloEvento() {
+    return datos.ajustes.titulo.trim() || tituloAutomatico();
   }
 
   /** «Jueves, 24 de diciembre de 2026» (para el campo de Ajustes). */
@@ -65,7 +77,18 @@
     return {
       version: 2,
       participantes: [],
-      ajustes: { titulo: 'Navidad ' + new Date().getFullYear(), presupuesto: '', fecha: fechaPorDefecto(), mensaje: '' },
+      // Título vacío = automático («Navidad» + año), para que no se quede anticuado.
+      ajustes: { titulo: '', presupuesto: '', fecha: fechaPorDefecto(), mensaje: '', lugar: normalizarLugar(null) },
+    };
+  }
+
+  /** modo: 'ninguno' (no sale en el correo), 'pendiente' («Por definir») o 'direccion'. */
+  function normalizarLugar(lugar) {
+    const l = lugar && typeof lugar === 'object' ? lugar : {};
+    return {
+      modo: ['ninguno', 'pendiente', 'direccion'].includes(l.modo) ? l.modo : 'ninguno',
+      nombre: typeof l.nombre === 'string' ? l.nombre : '',
+      direccion: typeof l.direccion === 'string' ? l.direccion : '',
     };
   }
 
@@ -81,14 +104,19 @@
     // Desde la versión 2, una fecha vacía significa que se ha borrado a propósito.
     let fecha = typeof a.fecha === 'string' && fechaDesdeIso(a.fecha) ? a.fecha : null;
     if (fecha === null) fecha = bruto.version >= 2 && a.fecha === '' ? '' : base.ajustes.fecha;
+    // Una fecha que ya ha pasado no sirve para el próximo sorteo: se pasa a la próxima Nochebuena.
+    if (fecha && fechaDesdeIso(fecha) < hoySinHora()) fecha = base.ajustes.fecha;
+    // «Navidad 2026» y similares pasan a automático, para que el año se actualice solo.
+    const titulo = texto(a.titulo, '').trim();
     return {
       version: 2,
       participantes,
       ajustes: {
-        titulo: texto(a.titulo, base.ajustes.titulo),
+        titulo: /^Navidad \d{4}$/i.test(titulo) ? '' : titulo,
         presupuesto: texto(a.presupuesto, ''),
         fecha,
         mensaje: texto(a.mensaje, ''),
+        lugar: normalizarLugar(a.lugar),
       },
     };
   }
@@ -352,9 +380,71 @@
     $(selector).addEventListener('input', ev => {
       datos.ajustes[campo] = ev.target.value;
       guardar();
-      renderCabecera();
+      if (campo === 'titulo') renderTitulo();
     });
   });
+
+  // ── Lugar ──
+
+  function enlaceMapa(direccion) {
+    return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(direccion.trim());
+  }
+
+  $$('input[name=lugar-modo]').forEach(radio => radio.addEventListener('change', ev => {
+    const lugar = datos.ajustes.lugar;
+    lugar.modo = ev.target.value;
+    guardar();
+    renderLugar();
+    renderSorteo();
+    if (lugar.modo === 'direccion' && !lugar.nombre && !lugar.direccion) setTimeout(() => $('#aj-lugar-nombre').focus(), 50);
+  }));
+
+  [['#aj-lugar-nombre', 'nombre'], ['#aj-lugar-direccion', 'direccion']].forEach(([selector, campo]) => {
+    $(selector).addEventListener('input', ev => {
+      datos.ajustes.lugar[campo] = ev.target.value;
+      guardar();
+      renderEnlaceMapa();
+    });
+  });
+
+  const AYUDA_LUGAR = {
+    ninguno: 'El lugar no saldrá en el correo.',
+    pendiente: 'En el correo saldrá «Lugar: Por definir».',
+    direccion: 'En el correo, la calle será un enlace a Google Maps.',
+  };
+
+  function renderLugar() {
+    const lugar = datos.ajustes.lugar;
+    $$('input[name=lugar-modo]').forEach(radio => { radio.checked = radio.value === lugar.modo; });
+    $('#lugar-detalle').hidden = lugar.modo !== 'direccion';
+    $('#lugar-ayuda').textContent = AYUDA_LUGAR[lugar.modo];
+    if (document.activeElement !== $('#aj-lugar-nombre')) $('#aj-lugar-nombre').value = lugar.nombre;
+    if (document.activeElement !== $('#aj-lugar-direccion')) $('#aj-lugar-direccion').value = lugar.direccion;
+    renderEnlaceMapa();
+  }
+
+  function renderEnlaceMapa() {
+    const direccion = datos.ajustes.lugar.direccion.trim();
+    const enlace = $('#aj-lugar-mapa');
+    enlace.hidden = !direccion;
+    if (direccion) enlace.href = enlaceMapa(direccion);
+  }
+
+  /** Texto corto para el resumen del sorteo. */
+  function lugarCorto() {
+    const lugar = datos.ajustes.lugar;
+    if (lugar.modo === 'pendiente') return 'lugar por definir';
+    if (lugar.modo === 'direccion') return lugar.nombre.trim() || lugar.direccion.trim();
+    return '';
+  }
+
+  function renderTitulo() {
+    const automatico = tituloAutomatico();
+    $('#aj-titulo').placeholder = automatico;
+    $('#aj-titulo-ayuda').textContent = datos.ajustes.titulo.trim()
+      ? `Si lo dejas vacío se pone solo: «${automatico}».`
+      : 'Se pone solo con el año de la fecha. Escribe otro si quieres.';
+  }
 
   // ── Calendario propio para la fecha ──
 
@@ -449,6 +539,7 @@
     datos.ajustes.fecha = iso;
     guardar();
     renderFecha();
+    renderTitulo();
     renderSorteo();
     $('#dlg-fecha').close();
   }
@@ -499,7 +590,7 @@
 
   /** Ajustes tal y como se mandan al servidor (con la fecha ya en texto). */
   function ajustesParaCorreo() {
-    return Object.assign({}, datos.ajustes, { fecha: fechaCorta(datos.ajustes.fecha) });
+    return Object.assign({}, datos.ajustes, { titulo: tituloEvento(), fecha: fechaCorta(datos.ajustes.fecha) });
   }
 
   $('#aj-clave').addEventListener('input', ev => {
@@ -525,15 +616,13 @@
     const a = datos.ajustes;
     const asignar = (selector, valor) => { if (document.activeElement !== $(selector)) $(selector).value = valor; };
     asignar('#aj-titulo', a.titulo);
+    renderTitulo();
     asignar('#aj-presupuesto', a.presupuesto);
     renderFecha();
+    renderLugar();
     asignar('#aj-mensaje', a.mensaje);
     asignar('#aj-clave', clave);
     $('#aj-recordar').checked = Boolean(leerLocal(LS_CLAVE));
-  }
-
-  function renderCabecera() {
-    $('#antetitulo').textContent = datos.ajustes.titulo.trim() || 'Navidad ' + new Date().getFullYear();
   }
 
   function renderEstadoServidor(error) {
@@ -805,6 +894,7 @@
     const partes = [plural(n, 'persona', 'personas')];
     if (a.presupuesto.trim()) partes.push(a.presupuesto.trim());
     if (fechaCorta(a.fecha)) partes.push(fechaCorta(a.fecha));
+    if (lugarCorto()) partes.push(lugarCorto());
     $('#resumen').textContent = partes.join(' · ');
 
     const prueba = modoActual() === 'prueba';
@@ -1031,7 +1121,6 @@
   // ───────────────────────── Arranque ─────────────────────────
 
   function renderTodo() {
-    renderCabecera();
     renderParticipantes();
     renderAjustes();
     renderSorteo();

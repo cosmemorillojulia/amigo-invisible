@@ -25,7 +25,10 @@ const EJEMPLO = {
   titulo: 'Navidad 2026',
   presupuesto: '20 €',
   fecha: '24 de diciembre',
-  mensaje: 'Nada de calcetines, por favor.',
+  mensaje: 'Nada de calcetines, por favor.\n\nNos vemos en la cena. ¡Un abrazo!',
+  lugarModo: 'direccion',
+  lugarNombre: 'Casa de Ana',
+  lugarDireccion: 'c/ Cerro del Fresno, 15, Madrid',
 };
 
 function cargarCodigo() {
@@ -39,7 +42,13 @@ function renderizar(parametros) {
   const valor = campo => (parametros.has(campo) ? parametros.get(campo) : EJEMPLO[campo]);
   const prueba = parametros.get('prueba') === '1';
   const gs = cargarCodigo();
-  const ajustes = gs.validarAjustes_({ titulo: valor('titulo'), presupuesto: valor('presupuesto'), fecha: valor('fecha'), mensaje: valor('mensaje') });
+  const ajustes = gs.validarAjustes_({
+    titulo: valor('titulo'),
+    presupuesto: valor('presupuesto'),
+    fecha: valor('fecha'),
+    mensaje: valor('mensaje'),
+    lugar: { modo: valor('lugarModo'), nombre: valor('lugarNombre'), direccion: valor('lugarDireccion') },
+  });
   const datos = { nombre: valor('nombre'), asignado: valor('asignado'), ajustes, prueba, emailReal: 'lucia@ejemplo.com' };
   return {
     asunto: gs.asuntoCorreo_(datos.nombre, ajustes, prueba),
@@ -62,8 +71,8 @@ const PAGINA = `<!doctype html>
   h1 { flex: 1 1 100%; margin: 0; font-size: 15px; font-weight: 600; }
   label { display: grid; gap: 4px; font-size: 12px; color: #a59e92; }
   label.check { display: flex; align-items: center; gap: 6px; padding-bottom: 6px; color: #e9e4da; }
-  input[type=text] { width: 140px; padding: 6px 8px; font: inherit; color: inherit; background: #1c221f; border: 1px solid #343c37; border-radius: 6px; }
-  input#mensaje { width: 260px; }
+  input[type=text], textarea, select { width: 140px; padding: 6px 8px; font: inherit; color: inherit; background: #1c221f; border: 1px solid #343c37; border-radius: 6px; }
+  textarea#mensaje { width: 300px; height: 58px; resize: vertical; }
   .asunto { flex: 1 1 100%; color: #a59e92; }
   .asunto b { color: #e9e4da; font-weight: 600; }
   .estado { margin-left: auto; padding-bottom: 6px; font-size: 12px; color: #6f7b74; }
@@ -84,7 +93,10 @@ const PAGINA = `<!doctype html>
   <label>Título<input type="text" id="titulo"></label>
   <label>Presupuesto<input type="text" id="presupuesto"></label>
   <label>Fecha<input type="text" id="fecha"></label>
-  <label>Mensaje para todos<input type="text" id="mensaje"></label>
+  <label>Lugar<select id="lugarModo"><option value="ninguno">No mostrar</option><option value="pendiente">Por definir</option><option value="direccion">Dirección</option></select></label>
+  <label>Sitio<input type="text" id="lugarNombre"></label>
+  <label>Calle<input type="text" id="lugarDireccion" style="width:220px"></label>
+  <label>Mensaje para todos<textarea id="mensaje"></textarea></label>
   <label class="check"><input type="checkbox" id="prueba"> Versión de prueba</label>
   <label class="check"><input type="checkbox" id="texto"> Texto plano</label>
   <span class="estado" id="estado"></span>
@@ -96,7 +108,7 @@ const PAGINA = `<!doctype html>
 </main>
 <script>
   var EJEMPLO = ${JSON.stringify(EJEMPLO)};
-  var CAMPOS = ['nombre', 'asignado', 'titulo', 'presupuesto', 'fecha', 'mensaje'];
+  var CAMPOS = ['nombre', 'asignado', 'titulo', 'presupuesto', 'fecha', 'lugarModo', 'lugarNombre', 'lugarDireccion', 'mensaje'];
   var $ = function (id) { return document.getElementById(id); };
   CAMPOS.forEach(function (c) { $(c).value = EJEMPLO[c]; });
 
@@ -122,7 +134,7 @@ const PAGINA = `<!doctype html>
   }
 
   var espera;
-  document.querySelectorAll('input').forEach(function (i) {
+  document.querySelectorAll('input, textarea, select').forEach(function (i) {
     i.addEventListener('input', function () { clearTimeout(espera); espera = setTimeout(actualizar, 250); });
   });
   new EventSource('/eventos').onmessage = actualizar;

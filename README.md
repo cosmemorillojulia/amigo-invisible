@@ -85,7 +85,7 @@ Si a alguien no le llega el correo, usa *Reenviar un correo* en la pantalla del 
 ## Editar el correo
 
 El diseño y los textos del correo están en [`backend/Code.gs`](backend/Code.gs), en la sección **Correos**:
-- `EMOJI_CORREO` y `FRASE_CORREO`: el emoji y la frase corta.
+- `EMOJI_CORREO`: el emoji que sale encima del nombre.
 - `htmlCorreo_`: el diseño.
 - `textoCorreo_`: la versión en texto plano.
 

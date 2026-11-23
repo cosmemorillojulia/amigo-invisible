@@ -245,7 +245,27 @@ function validarAjustes_(ajustes) {
     presupuesto: texto(a.presupuesto, 40),
     fecha: texto(a.fecha, 80),
     mensaje: texto(a.mensaje, 600),
+    lugar: validarLugar_(a.lugar),
   };
+}
+
+/**
+ * Lugar del intercambio. modo: 'ninguno' (no sale en el correo), 'pendiente' («Por definir»)
+ * o 'direccion' (nombre opcional + calle, con enlace a Google Maps).
+ */
+function validarLugar_(lugar) {
+  const l = lugar && typeof lugar === 'object' ? lugar : {};
+  const texto = (valor, max) => String(valor == null ? '' : valor).trim().replace(/\s+/g, ' ').slice(0, max);
+  const nombre = texto(l.nombre, 60);
+  const direccion = texto(l.direccion, 120);
+  if (l.modo === 'pendiente') return { modo: 'pendiente', nombre: '', direccion: '' };
+  if (l.modo === 'direccion' && (nombre || direccion)) return { modo: 'direccion', nombre: nombre, direccion: direccion };
+  return { modo: 'ninguno', nombre: '', direccion: '' };
+}
+
+/** El enlace siempre se construye aquí a partir del texto de la dirección. */
+function enlaceMapa_(direccion) {
+  return 'https://www.google.com/maps/search/?api=1&query=' + encodeURIComponent(direccion);
 }
 
 function validarReglas_(reglas) {
@@ -390,7 +410,6 @@ function barajar_(lista) {
 // (abre el correo en el navegador y se recarga cada vez que guardas este archivo).
 
 const EMOJI_CORREO = '🎁';
-const FRASE_CORREO = 'Piensa en algo que le haga ilusión: para acertar no hace falta gastar mucho.';
 
 function asunto_(ajustes) {
   return `Tu amigo invisible · ${ajustes.titulo}`;
@@ -425,13 +444,18 @@ function textoCorreo_(d) {
   const lineas = [];
   if (d.prueba) lineas.push(`(Esto es una prueba. En el sorteo de verdad, este correo le llegaría a ${d.nombre}, ${d.emailReal}.)`, '');
   lineas.push(`¡Hola, ${d.nombre}!`, '');
-  lineas.push(`Ya está hecho el sorteo y te ha tocado regalar a ${d.asignado}.`, '');
-  if (a.presupuesto) lineas.push(`Presupuesto: ${a.presupuesto}`);
-  if (a.fecha) lineas.push(`Fecha: ${a.fecha}`);
-  if (a.presupuesto || a.fecha) lineas.push('');
-  lineas.push(FRASE_CORREO, '');
-  if (a.mensaje) lineas.push(a.mensaje, '');
-  lineas.push('Y ya sabes: no se lo cuentes a nadie, que si no, pierde la gracia.', '', '¡Feliz Navidad!');
+  lineas.push(`Ya está hecho el sorteo y te ha tocado regalar a ${d.asignado}.`);
+  const detalles = [];
+  if (a.presupuesto) detalles.push(`Presupuesto: ${a.presupuesto}`);
+  if (a.fecha) detalles.push(`Fecha: ${a.fecha}`);
+  const lugar = a.lugar || {};
+  if (lugar.modo === 'pendiente') detalles.push('Lugar: por definir');
+  if (lugar.modo === 'direccion') {
+    detalles.push('Lugar: ' + [lugar.nombre, lugar.direccion].filter(Boolean).join(', '));
+    if (lugar.direccion) detalles.push('Mapa: ' + enlaceMapa_(lugar.direccion));
+  }
+  if (detalles.length) lineas.push('', ...detalles);
+  if (a.mensaje) lineas.push('', a.mensaje);
   return lineas.join('\n');
 }
 
@@ -466,22 +490,46 @@ function htmlCorreo_(d) {
        </td></tr>`
     : '';
 
+  // Caja de datos: presupuesto y fecha en dos columnas; debajo, el lugar a todo el ancho.
+  const etiqueta = texto => `<div style="font-family:${sans};font-size:11px;letter-spacing:2px;text-transform:uppercase;color:${c.oro};padding-bottom:6px;">${texto}</div>`;
+  const valor = (texto, color) => `<div style="font-family:${serif};font-size:17px;line-height:1.4;color:${color || c.tinta};">${texto}</div>`;
+
   const datos = [];
   if (a.presupuesto) datos.push(['Presupuesto', a.presupuesto]);
   if (a.fecha) datos.push(['Fecha', a.fecha]);
-  const bloqueDatos = datos.length
-    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 26px;background-color:${c.caja};border-radius:10px;"><tr>
-         ${datos.map(([etiqueta, valor], i) => `
+
+  const lugar = a.lugar || {};
+  let contenidoLugar = '';
+  if (lugar.modo === 'pendiente') contenidoLugar = valor('Por definir', c.suave);
+  if (lugar.modo === 'direccion') {
+    if (lugar.nombre) contenidoLugar += valor(e(lugar.nombre));
+    if (lugar.direccion) {
+      contenidoLugar += `<div style="margin-top:${lugar.nombre ? 4 : 0}px;font-family:${serif};font-size:${lugar.nombre ? 15 : 17}px;line-height:1.4;">`
+        + `<a href="${e(enlaceMapa_(lugar.direccion))}" target="_blank" style="color:${c.verde};text-decoration:underline;">${e(lugar.direccion)}</a></div>`;
+    }
+  }
+
+  const filas = [];
+  if (datos.length) {
+    filas.push(`<tr>${datos.map(([titulo, texto], i) => `
          <td valign="top" width="${Math.floor(100 / datos.length)}%" style="padding:16px 10px;text-align:center;${i ? `border-left:1px solid ${c.linea};` : ''}">
-           <div style="font-family:${sans};font-size:11px;letter-spacing:2px;text-transform:uppercase;color:${c.oro};padding-bottom:6px;">${etiqueta}</div>
-           <div style="font-family:${serif};font-size:17px;line-height:1.4;color:${c.tinta};">${e(valor)}</div>
-         </td>`).join('')}
-       </tr></table>`
+           ${etiqueta(titulo)}${valor(e(texto))}
+         </td>`).join('')}</tr>`);
+  }
+  if (contenidoLugar) {
+    filas.push(`<tr><td colspan="${Math.max(1, datos.length)}" style="padding:16px 14px;text-align:center;${datos.length ? `border-top:1px solid ${c.linea};` : ''}">
+           ${etiqueta('Lugar')}${contenidoLugar}
+         </td></tr>`);
+  }
+  const bloqueDatos = filas.length
+    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 ${a.mensaje ? 28 : 0}px;background-color:${c.caja};border-radius:10px;">${filas.join('')}</table>`
     : '';
 
-  const bloqueMensaje = a.mensaje
-    ? `<p style="margin:0 0 22px;padding:4px 0 4px 16px;border-left:2px solid ${c.oroClaro};font-family:${serif};font-style:italic;font-size:16px;line-height:1.65;color:${c.suave};">${e(a.mensaje).replace(/\n/g, '<br>')}</p>`
-    : '';
+  // El mensaje del organizador va tal cual, como texto normal: una línea en blanco empieza un párrafo nuevo.
+  const parrafosMensaje = a.mensaje.split(/\n\s*\n/).map(t => t.trim()).filter(Boolean);
+  const bloqueMensaje = parrafosMensaje
+    .map((t, i) => `<p style="${parrafo}${i === parrafosMensaje.length - 1 ? 'margin-bottom:0;' : ''}">${e(t).replace(/\n/g, '<br>')}</p>`)
+    .join('\n          ');
 
   return `<!DOCTYPE html>
 <html lang="es">
@@ -503,7 +551,7 @@ function htmlCorreo_(d) {
         <tr><td style="background-color:${c.papel};border-radius:0 0 12px 12px;padding:38px 30px 36px;">
           <p style="${parrafo}">¡Hola, ${e(d.nombre)}!</p>
           <p style="${parrafo}margin-bottom:0;">Ya está hecho el sorteo y este año te toca regalar a…</p>
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:26px 0 30px;"><tr>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:26px 0 ${filas.length || parrafosMensaje.length ? 30 : 0}px;"><tr>
             <td style="padding:6px 8px 0;text-align:center;">
               <div style="font-size:34px;line-height:1;">${EMOJI_CORREO}</div>
               <div style="margin-top:14px;font-family:${serif};font-style:italic;font-size:44px;line-height:1.15;color:${c.verde};word-break:break-word;">${e(d.asignado)}</div>
@@ -511,10 +559,7 @@ function htmlCorreo_(d) {
             </td>
           </tr></table>
           ${bloqueDatos}
-          <p style="${parrafo}">${e(FRASE_CORREO)}</p>
           ${bloqueMensaje}
-          <p style="${parrafo}">Y ya sabes: no se lo cuentes a nadie, que si no, pierde la gracia.</p>
-          <p style="${parrafo}margin-bottom:0;">¡Feliz Navidad!</p>
         </td></tr>
         <tr><td style="padding:20px 0 0;text-align:center;font-family:${serif};font-size:15px;color:${c.oro};">&#10022;</td></tr>
       </table>
