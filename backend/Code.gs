@@ -1,11 +1,14 @@
 /**
- * 🎄 Amigo Invisible — backend en Google Apps Script
+ * Amigo invisible — servidor (Google Apps Script)
  *
- * Hace el sorteo y envía un correo a cada participante desde la cuenta de Google
- * que despliega este script. La web (GitHub Pages) nunca recibe el resultado:
- * solo la lista de personas a las que se ha enviado el correo.
+ * Hace el sorteo y manda un correo a cada participante desde la cuenta de Google
+ * que publica este script. La web nunca recibe el resultado, solo la lista de
+ * personas a las que se ha enviado el correo.
  *
- * Instalación: ver README.md → «1. Backend en Google Apps Script».
+ * Las exclusiones se guardan aquí (propiedad REGLAS) y solo se pueden ver o
+ * cambiar con la clave, desde «Opciones del organizador».
+ *
+ * Instalación: README.md → «1. Servidor en Google Apps Script».
  *
  * Propiedades del script (Configuración del proyecto → Propiedades del script):
  *   CLAVE         (obligatoria) Contraseña que escribirás en la app.
@@ -14,18 +17,17 @@
  */
 
 const MAX_PARTICIPANTES = 50;
+const MAX_EXCLUSIONES = 200;
 const MAX_FALLOS_CLAVE = 8;
 const SEGUNDOS_BLOQUEO = 15 * 60;
 const MAX_BYTES_PROPIEDAD = 9000;
-const NOMBRE_REMITENTE = 'Amigo Invisible';
+const NOMBRE_REMITENTE = 'Amigo invisible';
 const EMAIL_VALIDO = /^[^\s@,;<>()]+@[^\s@,;<>()]+\.[^\s@,;<>()]{2,}$/;
 
 // ───────────────────────────── Entrada HTTP ─────────────────────────────
 
 function doGet() {
-  return ContentService.createTextOutput(
-    '🎄 El backend del Amigo Invisible está funcionando. Usa la app web para hacer el sorteo.'
-  );
+  return ContentService.createTextOutput('El servidor del amigo invisible está funcionando.');
 }
 
 function doPost(e) {
@@ -42,6 +44,8 @@ function doPost(e) {
     guardar: accionGuardar_,
     cargar: accionCargar_,
     vistaPrevia: accionVistaPrevia_,
+    leerReglas: accionLeerReglas_,
+    guardarReglas: accionGuardarReglas_,
     sortear: accionSortear_,
     reenviar: accionReenviar_,
   };
@@ -75,7 +79,7 @@ function comprobarClave_(clave) {
   const cache = CacheService.getScriptCache();
   const fallos = Number(cache.get('fallosClave') || 0);
   if (fallos >= MAX_FALLOS_CLAVE) {
-    throw error_('Demasiados intentos con una clave equivocada. Espera 15 minutos.', 'BLOQUEADO');
+    throw error_('Demasiados intentos con una clave equivocada. Espera un cuarto de hora.', 'BLOQUEADO');
   }
   if (typeof clave !== 'string' || clave !== real) {
     cache.put('fallosClave', String(fallos + 1), SEGUNDOS_BLOQUEO);
@@ -100,8 +104,8 @@ function accionEstado_() {
 function accionGuardar_(peticion) {
   const datos = peticion.datos;
   if (!datos || !Array.isArray(datos.participantes)) throw error_('No hay ninguna lista que guardar.', 'DATOS');
-  const texto = JSON.stringify(datos);
-  if (bytes_(texto) > MAX_BYTES_PROPIEDAD) throw error_('La lista es demasiado grande para guardarla en la nube.', 'TAMANO');
+  const texto = JSON.stringify({ participantes: datos.participantes, ajustes: datos.ajustes || {} });
+  if (bytes_(texto) > MAX_BYTES_PROPIEDAD) throw error_('La lista es demasiado grande para guardarla.', 'TAMANO');
   PropertiesService.getScriptProperties().setProperty('DATOS', texto);
   return { guardado: new Date().toISOString() };
 }
@@ -113,14 +117,26 @@ function accionCargar_() {
 
 function accionVistaPrevia_(peticion) {
   const ajustes = validarAjustes_(peticion.ajustes);
-  const datos = { nombre: 'Rudolf', asignado: 'Papá Noel', ajustes: ajustes, prueba: false };
+  const datos = { nombre: 'Marta', asignado: 'Pablo', ajustes: ajustes, prueba: false };
   return { asunto: asunto_(ajustes), html: htmlCorreo_(datos) };
+}
+
+function accionLeerReglas_() {
+  return { reglas: leerReglas_() };
+}
+
+function accionGuardarReglas_(peticion) {
+  const reglas = validarReglas_(peticion.reglas);
+  const texto = JSON.stringify(reglas);
+  if (bytes_(texto) > MAX_BYTES_PROPIEDAD) throw error_('Hay demasiadas exclusiones para guardarlas.', 'TAMANO');
+  PropertiesService.getScriptProperties().setProperty('REGLAS', texto);
+  return { reglas: reglas };
 }
 
 function accionSortear_(peticion) {
   const participantes = validarParticipantes_(peticion.participantes);
-  const exclusiones = validarExclusiones_(peticion.exclusiones, participantes);
   const ajustes = validarAjustes_(peticion.ajustes);
+  const reglas = leerReglas_();
   // Por seguridad, solo es un sorteo real si se pide de forma explícita.
   const prueba = peticion.prueba !== false;
 
@@ -137,13 +153,24 @@ function accionSortear_(peticion) {
     const cuota = MailApp.getRemainingDailyQuota();
     if (cuota < participantes.length) {
       throw error_(
-        `Hoy solo quedan ${cuota} correos disponibles en la cuenta y hacen falta ${participantes.length}. Prueba mañana.`,
+        `Hoy solo se pueden mandar ${cuota} correos más desde esta cuenta y hacen falta ${participantes.length}. Prueba mañana.`,
         'CUOTA'
       );
     }
 
     const nombres = participantes.map(p => p.nombre);
-    const destino = resolverSorteo_(nombres, exclusiones, ajustes.evitarReciprocos);
+    const exclusiones = exclusionesAplicables_(reglas.exclusiones, nombres);
+    let destino;
+    try {
+      destino = resolverSorteo_(nombres, exclusiones, reglas.evitarReciprocos);
+    } catch (err) {
+      // Mensaje genérico: el sorteo puede hacerse delante de otros y las reglas son privadas.
+      if (err.codigo === 'IMPOSIBLE') {
+        throw error_('Con las reglas que hay puestas no sale ningún reparto posible. Revísalas en Ajustes → Opciones del organizador.', 'IMPOSIBLE');
+      }
+      throw err;
+    }
+
     const sorteo = { fecha: new Date().toISOString(), ajustes: ajustes, participantes: participantes, destino: destino };
     // Se guarda ANTES de enviar: así se puede reenviar a quien falle.
     if (!prueba) guardarSorteo_(sorteo);
@@ -168,11 +195,11 @@ function accionSortear_(peticion) {
 
 function accionReenviar_(peticion) {
   const sorteo = leerSorteo_();
-  if (!sorteo) throw error_('Todavía no hay ningún sorteo real guardado.', 'SIN_SORTEO');
+  if (!sorteo) throw error_('Todavía no se ha hecho ningún sorteo real.', 'SIN_SORTEO');
 
-  const buscado = String(peticion.nombre || '').trim().toLowerCase();
+  const buscado = limpiarNombre_(peticion.nombre).toLowerCase();
   const i = sorteo.participantes.findIndex(p => p.nombre.toLowerCase() === buscado);
-  if (i < 0) throw error_('Esa persona no está en el último sorteo.', 'DATOS');
+  if (i < 0) throw error_('Esa persona no estaba en el último sorteo.', 'DATOS');
 
   if (peticion.email) {
     const email = String(peticion.email).trim();
@@ -188,36 +215,25 @@ function accionReenviar_(peticion) {
 
 // ────────────────────────────── Validación ──────────────────────────────
 
+function limpiarNombre_(valor) {
+  return String(valor == null ? '' : valor).trim().replace(/\s+/g, ' ');
+}
+
 function validarParticipantes_(lista) {
   if (!Array.isArray(lista)) throw error_('Falta la lista de participantes.', 'DATOS');
-  if (lista.length < 2) throw error_('Hacen falta al menos 2 participantes.', 'DATOS');
-  if (lista.length > MAX_PARTICIPANTES) throw error_(`Como máximo ${MAX_PARTICIPANTES} participantes.`, 'DATOS');
+  if (lista.length < 2) throw error_('Hacen falta al menos dos personas.', 'DATOS');
+  if (lista.length > MAX_PARTICIPANTES) throw error_(`Como máximo pueden participar ${MAX_PARTICIPANTES} personas.`, 'DATOS');
 
   const vistos = Object.create(null);
   return lista.map(p => {
-    const nombre = String((p && p.nombre) || '').trim().replace(/\s+/g, ' ');
+    const nombre = limpiarNombre_(p && p.nombre);
     const email = String((p && p.email) || '').trim();
-    if (!nombre || nombre.length > 40) throw error_('Hay un participante sin nombre o con un nombre demasiado largo.', 'DATOS');
+    if (!nombre || nombre.length > 40) throw error_('Hay alguien sin nombre o con un nombre demasiado largo.', 'DATOS');
     if (!EMAIL_VALIDO.test(email) || email.length > 254) throw error_(`El correo de ${nombre} no es válido.`, 'DATOS');
     const clave = nombre.toLowerCase();
-    if (vistos[clave]) throw error_(`El nombre «${nombre}» está repetido.`, 'DATOS');
+    if (vistos[clave]) throw error_(`Hay dos personas que se llaman «${nombre}».`, 'DATOS');
     vistos[clave] = true;
     return { nombre: nombre, email: email };
-  });
-}
-
-function validarExclusiones_(lista, participantes) {
-  if (lista == null) return [];
-  if (!Array.isArray(lista)) throw error_('Las exclusiones no son válidas.', 'DATOS');
-  const porNombre = Object.create(null);
-  participantes.forEach(p => { porNombre[p.nombre.toLowerCase()] = p.nombre; });
-  return lista.map(par => {
-    if (!Array.isArray(par) || par.length !== 2) throw error_('Las exclusiones no son válidas.', 'DATOS');
-    const a = porNombre[String(par[0]).trim().toLowerCase()];
-    const b = porNombre[String(par[1]).trim().toLowerCase()];
-    if (!a || !b) throw error_(`La exclusión «${par[0]} – ${par[1]}» menciona a alguien que no participa.`, 'DATOS');
-    if (a === b) throw error_('Una exclusión no puede ser de alguien consigo mismo.', 'DATOS');
-    return [a, b];
   });
 }
 
@@ -229,11 +245,51 @@ function validarAjustes_(ajustes) {
     presupuesto: texto(a.presupuesto, 40),
     fecha: texto(a.fecha, 80),
     mensaje: texto(a.mensaje, 600),
-    evitarReciprocos: a.evitarReciprocos === true,
   };
 }
 
+function validarReglas_(reglas) {
+  if (!reglas || typeof reglas !== 'object') throw error_('Las reglas no son válidas.', 'DATOS');
+  const lista = reglas.exclusiones == null ? [] : reglas.exclusiones;
+  if (!Array.isArray(lista)) throw error_('Las exclusiones no son válidas.', 'DATOS');
+  if (lista.length > MAX_EXCLUSIONES) throw error_(`Como máximo se pueden poner ${MAX_EXCLUSIONES} exclusiones.`, 'DATOS');
+
+  const vistas = Object.create(null);
+  const exclusiones = [];
+  lista.forEach(par => {
+    if (!Array.isArray(par) || par.length !== 2) throw error_('Hay una exclusión mal formada.', 'DATOS');
+    const a = limpiarNombre_(par[0]);
+    const b = limpiarNombre_(par[1]);
+    if (!a || !b || a.length > 40 || b.length > 40) throw error_('Hay una exclusión con un nombre vacío o demasiado largo.', 'DATOS');
+    if (a.toLowerCase() === b.toLowerCase()) throw error_('Una exclusión tiene que ser entre dos personas distintas.', 'DATOS');
+    const clave = [a.toLowerCase(), b.toLowerCase()].sort().join('\u0000');
+    if (vistas[clave]) return;
+    vistas[clave] = true;
+    exclusiones.push([a, b]);
+  });
+  return { exclusiones: exclusiones, evitarReciprocos: reglas.evitarReciprocos === true };
+}
+
+/** Se queda con las exclusiones cuyas dos personas participan (con el nombre tal y como viene en la lista). */
+function exclusionesAplicables_(exclusiones, nombres) {
+  const porNombre = Object.create(null);
+  nombres.forEach(n => { porNombre[n.toLowerCase()] = n; });
+  return exclusiones
+    .map(par => [porNombre[par[0].toLowerCase()], porNombre[par[1].toLowerCase()]])
+    .filter(par => par[0] && par[1]);
+}
+
 // ───────────────────────────── Almacenamiento ───────────────────────────
+
+function leerReglas_() {
+  const texto = PropertiesService.getScriptProperties().getProperty('REGLAS');
+  if (!texto) return { exclusiones: [], evitarReciprocos: false };
+  try {
+    return validarReglas_(JSON.parse(texto));
+  } catch (err) {
+    return { exclusiones: [], evitarReciprocos: false };
+  }
+}
 
 /** Se guarda en Base64 para que no veas el resultado sin querer al abrir las propiedades. */
 function guardarSorteo_(sorteo) {
@@ -266,7 +322,7 @@ function emailPrueba_() {
 function resolverSorteo_(nombres, exclusiones, evitarReciprocos) {
   const n = nombres.length;
   if (evitarReciprocos && n < 3) {
-    throw error_('Para evitar intercambios cruzados hacen falta al menos 3 participantes.', 'IMPOSIBLE');
+    throw error_('Para evitar parejas cruzadas hacen falta al menos tres personas.', 'IMPOSIBLE');
   }
   const indice = Object.create(null);
   nombres.forEach((nombre, i) => { indice[nombre.toLowerCase()] = i; });
@@ -283,7 +339,7 @@ function resolverSorteo_(nombres, exclusiones, evitarReciprocos) {
     permitido[b][a] = false;
   });
   for (let i = 0; i < n; i++) {
-    if (!permitido[i].some(Boolean)) throw error_(`${nombres[i]} no puede regalar a nadie con estas exclusiones.`, 'IMPOSIBLE');
+    if (!permitido[i].some(Boolean)) throw error_(`${nombres[i]} no puede regalar a nadie.`, 'IMPOSIBLE');
   }
 
   const esValida = destino => destino.every((j, i) => permitido[i][j] && !(evitarReciprocos && destino[j] === i));
@@ -302,7 +358,7 @@ function resolverSorteo_(nombres, exclusiones, evitarReciprocos) {
   let pasos = 0;
   const paso = k => {
     if (k === n) return true;
-    if (++pasos > 200000) throw error_('Hay demasiadas exclusiones para encontrar un sorteo. Quita alguna.', 'IMPOSIBLE');
+    if (++pasos > 200000) throw error_('Hay demasiadas exclusiones para encontrar un reparto.', 'IMPOSIBLE');
     const i = orden[k];
     for (const j of barajar_(rango_(n))) {
       if (usado[j] || !permitido[i][j] || (evitarReciprocos && destino[j] === i)) continue;
@@ -312,7 +368,7 @@ function resolverSorteo_(nombres, exclusiones, evitarReciprocos) {
     }
     return false;
   };
-  if (!paso(0)) throw error_('Con estas exclusiones el sorteo es imposible. Quita alguna.', 'IMPOSIBLE');
+  if (!paso(0)) throw error_('Con estas exclusiones no hay ningún reparto posible.', 'IMPOSIBLE');
   return destino;
 }
 
@@ -330,17 +386,25 @@ function barajar_(lista) {
 }
 
 // ─────────────────────────────── Correos ────────────────────────────────
+// Para ver los cambios al momento: node herramientas/vista-correo.js
+// (abre el correo en el navegador y se recarga cada vez que guardas este archivo).
+
+const EMOJI_CORREO = '🎁';
+const FRASE_CORREO = 'Piensa en algo que le haga ilusión: para acertar no hace falta gastar mucho.';
 
 function asunto_(ajustes) {
-  return `🎄 ¡Tu Amigo Invisible de ${ajustes.titulo}! 🎁`;
+  return `Tu amigo invisible · ${ajustes.titulo}`;
+}
+
+function asuntoCorreo_(nombre, ajustes, prueba) {
+  return prueba ? `[Prueba · ${nombre}] ${asunto_(ajustes)}` : asunto_(ajustes);
 }
 
 function enviarCorreo_(persona, asignado, ajustes, destinoPrueba) {
   const datos = { nombre: persona.nombre, asignado: asignado, ajustes: ajustes, prueba: Boolean(destinoPrueba), emailReal: persona.email };
-  const asunto = destinoPrueba ? `🧪 [PRUEBA · ${persona.nombre}] ${asunto_(ajustes)}` : asunto_(ajustes);
   MailApp.sendEmail({
     to: destinoPrueba || persona.email,
-    subject: asunto,
+    subject: asuntoCorreo_(persona.nombre, ajustes, Boolean(destinoPrueba)),
     body: textoCorreo_(datos),
     htmlBody: htmlCorreo_(datos),
     name: NOMBRE_REMITENTE,
@@ -359,46 +423,64 @@ function escaparHtml_(texto) {
 function textoCorreo_(d) {
   const a = d.ajustes;
   const lineas = [];
-  if (d.prueba) lineas.push(`[CORREO DE PRUEBA — en el sorteo real iría a ${d.nombre} (${d.emailReal})]`, '');
-  lineas.push(`¡Hola ${d.nombre}!`, '', `Ha llegado el momento del Amigo Invisible de ${a.titulo}.`, '');
-  lineas.push(`Tu amigo invisible es: ${d.asignado}`, '');
+  if (d.prueba) lineas.push(`(Esto es una prueba. En el sorteo de verdad, este correo le llegaría a ${d.nombre}, ${d.emailReal}.)`, '');
+  lineas.push(`¡Hola, ${d.nombre}!`, '');
+  lineas.push(`Ya está hecho el sorteo y te ha tocado regalar a ${d.asignado}.`, '');
   if (a.presupuesto) lineas.push(`Presupuesto: ${a.presupuesto}`);
-  if (a.fecha) lineas.push(`Intercambio: ${a.fecha}`);
-  if (a.mensaje) lineas.push('', a.mensaje);
-  lineas.push('', '¡Shhh! Que no se entere nadie. ¡Feliz Navidad! 🎄');
+  if (a.fecha) lineas.push(`Fecha: ${a.fecha}`);
+  if (a.presupuesto || a.fecha) lineas.push('');
+  lineas.push(FRASE_CORREO, '');
+  if (a.mensaje) lineas.push(a.mensaje, '');
+  lineas.push('Y ya sabes: no se lo cuentes a nadie, que si no, pierde la gracia.', '', '¡Feliz Navidad!');
   return lineas.join('\n');
 }
 
 function htmlCorreo_(d) {
   const e = escaparHtml_;
   const a = d.ajustes;
+  // Los mismos colores que la app: verde muy oscuro, crema y dorado.
+  const c = {
+    fondo: '#ebe3d4',
+    cabecera: '#13241e',
+    papel: '#fbf7ef',
+    caja: '#f3ecdf',
+    tinta: '#2a2520',
+    suave: '#6b6257',
+    linea: '#e3d8c4',
+    verde: '#1f3a2f',
+    oro: '#b08d52',
+    oroClaro: '#d6bb86',
+    crema: '#efe7d8',
+  };
+  const serif = "Georgia, 'Times New Roman', serif";
+  const sans = "'Helvetica Neue', Helvetica, Arial, sans-serif";
+  const parrafo = `margin:0 0 18px;font-family:${serif};font-size:17px;line-height:1.65;color:${c.tinta};`;
 
-  const bannerPrueba = d.prueba
-    ? `<tr><td style="background-color:#fff3cd;color:#7a5b00;padding:14px 20px;text-align:center;font-family:Arial,Helvetica,sans-serif;font-size:14px;line-height:1.5;">
-         🧪 <strong>CORREO DE PRUEBA</strong> — en el sorteo real iría a <strong>${e(d.nombre)}</strong> (${e(d.emailReal)})
+  const aviso = d.prueba
+    ? `<tr><td style="padding:0 0 16px;">
+         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
+           <td style="padding:12px 16px;border:1px dashed ${c.oro};border-radius:8px;font-family:${sans};font-size:13px;line-height:1.5;color:${c.suave};">
+             Esto es una prueba. En el sorteo de verdad, este correo le llegaría a <strong style="color:${c.tinta};">${e(d.nombre)}</strong> (${e(d.emailReal)}).
+           </td>
+         </tr></table>
        </td></tr>`
     : '';
 
-  const detalles = [];
-  if (a.presupuesto) detalles.push(['💶', 'Presupuesto', a.presupuesto]);
-  if (a.fecha) detalles.push(['📅', 'Intercambio', a.fecha]);
-  const bloqueDetalles = detalles.length
-    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 28px 0;">
-         ${detalles.map(([icono, etiqueta, valor]) => `
-         <tr><td style="padding:12px 16px;background-color:#f1f6f2;border-radius:12px;font-size:16px;line-height:1.4;color:#1a472a;text-align:left;">
-           ${icono}&nbsp; <strong>${etiqueta}:</strong> ${e(valor)}
-         </td></tr>
-         <tr><td style="height:8px;line-height:8px;font-size:0;">&nbsp;</td></tr>`).join('')}
-       </table>`
+  const datos = [];
+  if (a.presupuesto) datos.push(['Presupuesto', a.presupuesto]);
+  if (a.fecha) datos.push(['Fecha', a.fecha]);
+  const bloqueDatos = datos.length
+    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 26px;background-color:${c.caja};border-radius:10px;"><tr>
+         ${datos.map(([etiqueta, valor], i) => `
+         <td valign="top" width="${Math.floor(100 / datos.length)}%" style="padding:16px 10px;text-align:center;${i ? `border-left:1px solid ${c.linea};` : ''}">
+           <div style="font-family:${sans};font-size:11px;letter-spacing:2px;text-transform:uppercase;color:${c.oro};padding-bottom:6px;">${etiqueta}</div>
+           <div style="font-family:${serif};font-size:17px;line-height:1.4;color:${c.tinta};">${e(valor)}</div>
+         </td>`).join('')}
+       </tr></table>`
     : '';
 
   const bloqueMensaje = a.mensaje
-    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 28px 0;">
-         <tr><td style="padding:18px 20px;border-left:4px solid #c41e3a;background-color:#fdf3f4;border-radius:0 12px 12px 0;text-align:left;">
-           <div style="font-size:13px;letter-spacing:1px;text-transform:uppercase;color:#a01830;font-weight:bold;margin-bottom:6px;">💌 Mensaje del organizador</div>
-           <div style="font-size:16px;line-height:1.6;color:#444444;">${e(a.mensaje).replace(/\n/g, '<br>')}</div>
-         </td></tr>
-       </table>`
+    ? `<p style="margin:0 0 22px;padding:4px 0 4px 16px;border-left:2px solid ${c.oroClaro};font-family:${serif};font-style:italic;font-size:16px;line-height:1.65;color:${c.suave};">${e(a.mensaje).replace(/\n/g, '<br>')}</p>`
     : '';
 
   return `<!DOCTYPE html>
@@ -408,49 +490,33 @@ function htmlCorreo_(d) {
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${e(asunto_(a))}</title>
 </head>
-<body style="margin:0;padding:0;background-color:#1a472a;font-family:Georgia,'Times New Roman',serif;">
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:#1a472a;padding:24px 12px;">
-    <tr><td align="center">
-      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:600px;background-color:#ffffff;border-radius:24px;overflow:hidden;">
-        ${bannerPrueba}
-        <tr>
-          <td style="background-color:#c41e3a;background-image:linear-gradient(135deg,#c41e3a 0%,#8b0000 100%);padding:44px 24px 40px;text-align:center;">
-            <div style="font-size:26px;letter-spacing:6px;">❄️⭐🎄⭐❄️</div>
-            <h1 style="color:#ffffff;margin:18px 0 10px;font-size:38px;line-height:1.15;letter-spacing:2px;font-weight:bold;">AMIGO INVISIBLE</h1>
-            <p style="color:#ffe5e5;font-size:19px;margin:0;font-style:italic;">✨ ${e(a.titulo)} ✨</p>
-          </td>
-        </tr>
-        <tr>
-          <td style="padding:44px 28px 20px;text-align:center;">
-            <div style="font-size:30px;color:#2d5a3d;margin-bottom:22px;font-weight:bold;">¡Hola ${e(d.nombre)}! 🎅</div>
-            <p style="font-size:18px;color:#444444;line-height:1.7;margin:0 0 30px;">
-              ¡Ha llegado el momento más emocionante del año!<br>
-              <strong style="color:#c41e3a;">Es hora de descubrir a quién vas a hacer feliz esta Navidad.</strong>
-            </p>
-            <div style="font-size:56px;line-height:1;margin-bottom:12px;">🎁</div>
-            <table role="presentation" cellpadding="0" cellspacing="0" border="0" width="100%" style="margin:0 0 32px;">
-              <tr><td style="background-color:#ffd700;background-image:linear-gradient(135deg,#ffd700 0%,#ffed4e 50%,#ffd700 100%);border:4px solid #c41e3a;border-radius:20px;padding:28px 18px;text-align:center;">
-                <div style="font-size:20px;color:#1a472a;margin-bottom:16px;font-weight:bold;">🌟 Tu amigo invisible es... 🌟</div>
-                <div style="font-size:34px;line-height:1.2;color:#c41e3a;font-weight:bold;text-transform:uppercase;letter-spacing:3px;padding:18px 12px;background-color:#fffbea;border-radius:14px;word-break:break-word;">
-                  ${e(d.asignado)}
-                </div>
-              </td></tr>
-            </table>
-            ${bloqueDetalles}
-            ${bloqueMensaje}
-            <p style="font-size:17px;color:#444444;line-height:1.7;margin:0 0 20px;">
-              Ahora empieza lo divertido: encontrar el regalo perfecto.<br>
-              Y recuerda: <strong style="color:#c41e3a;">¡shhh, que no se entere nadie!</strong> 🤫
-            </p>
-            <div style="font-size:26px;letter-spacing:8px;margin:10px 0 18px;">❄️❄️❄️</div>
-          </td>
-        </tr>
-        <tr>
-          <td style="background-color:#1a472a;background-image:linear-gradient(135deg,#1a472a 0%,#2d5a3d 100%);padding:32px 24px;text-align:center;color:#ffffff;">
-            <p style="margin:0 0 10px;font-size:17px;"><strong>🎊 ¡Feliz Navidad y a disfrutar preparando tu regalo! 🎊</strong></p>
-            <p style="margin:0;font-size:15px;opacity:0.9;font-style:italic;">Con cariño, el equipo organizador 💚❤️</p>
-          </td>
-        </tr>
+<body style="margin:0;padding:0;background-color:${c.fondo};">
+  <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">Ya está hecho el sorteo. Mira a quién te ha tocado.</div>
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${c.fondo};">
+    <tr><td align="center" style="padding:32px 14px 40px;">
+      <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:520px;">
+        ${aviso}
+        <tr><td style="background-color:${c.cabecera};border-radius:12px 12px 0 0;padding:34px 28px 30px;text-align:center;">
+          <div style="font-family:${sans};font-size:11px;letter-spacing:3px;text-transform:uppercase;color:${c.oroClaro};">${e(a.titulo)}</div>
+          <div style="margin-top:12px;font-family:${serif};font-size:32px;line-height:1.1;color:${c.crema};">Amigo <em style="color:${c.oroClaro};">invisible</em></div>
+        </td></tr>
+        <tr><td style="background-color:${c.papel};border-radius:0 0 12px 12px;padding:38px 30px 36px;">
+          <p style="${parrafo}">¡Hola, ${e(d.nombre)}!</p>
+          <p style="${parrafo}margin-bottom:0;">Ya está hecho el sorteo y este año te toca regalar a…</p>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:26px 0 30px;"><tr>
+            <td style="padding:6px 8px 0;text-align:center;">
+              <div style="font-size:34px;line-height:1;">${EMOJI_CORREO}</div>
+              <div style="margin-top:14px;font-family:${serif};font-style:italic;font-size:44px;line-height:1.15;color:${c.verde};word-break:break-word;">${e(d.asignado)}</div>
+              <div style="width:48px;height:1px;margin:20px auto 0;background-color:${c.oro};font-size:0;line-height:1px;">&nbsp;</div>
+            </td>
+          </tr></table>
+          ${bloqueDatos}
+          <p style="${parrafo}">${e(FRASE_CORREO)}</p>
+          ${bloqueMensaje}
+          <p style="${parrafo}">Y ya sabes: no se lo cuentes a nadie, que si no, pierde la gracia.</p>
+          <p style="${parrafo}margin-bottom:0;">¡Feliz Navidad!</p>
+        </td></tr>
+        <tr><td style="padding:20px 0 0;text-align:center;font-family:${serif};font-size:15px;color:${c.oro};">&#10022;</td></tr>
       </table>
     </td></tr>
   </table>
@@ -461,19 +527,19 @@ function htmlCorreo_(d) {
 // ──────────────────── Utilidades para ejecutar desde el editor ────────────────────
 
 /**
- * Ejecútala una vez desde el editor (botón ▶ Ejecutar) para dar permisos al
- * script y revisar la configuración. NO envía ningún correo.
+ * Ejecútala desde el editor (▶ Ejecutar) para dar permisos al script y revisar
+ * la configuración. NO envía ningún correo.
  */
 function comprobarConfiguracion() {
   const propiedades = PropertiesService.getScriptProperties();
-  console.log('CLAVE configurada: ' + (propiedades.getProperty('CLAVE') ? 'sí ✅' : 'NO ❌ → añádela en Configuración del proyecto → Propiedades del script'));
+  console.log('CLAVE configurada: ' + (propiedades.getProperty('CLAVE') ? 'sí' : 'NO → añádela en Configuración del proyecto → Propiedades del script'));
   console.log('Correos que quedan hoy: ' + MailApp.getRemainingDailyQuota());
   console.log('Los correos de prueba llegarán a: ' + emailPrueba_());
   console.log('Hay un sorteo real guardado: ' + (propiedades.getProperty('ULTIMO_SORTEO') ? 'sí' : 'no'));
 }
 
-/** Envía un correo de muestra SOLO a tu propia cuenta (o a EMAIL_PRUEBA) para ver el diseño. */
+/** Manda un correo de muestra SOLO a tu propia cuenta (o a EMAIL_PRUEBA) para ver el diseño. */
 function enviarCorreoDeMuestra() {
-  const ajustes = validarAjustes_({ presupuesto: '20 €', fecha: '24 de diciembre', mensaje: '¡Esto es un correo de muestra!' });
-  enviarCorreo_({ nombre: 'Rudolf', email: emailPrueba_() }, 'Papá Noel', ajustes, emailPrueba_());
+  const ajustes = validarAjustes_({ presupuesto: '20 €', fecha: '24 de diciembre', mensaje: 'Esto es un correo de muestra.' });
+  enviarCorreo_({ nombre: 'Marta', email: emailPrueba_() }, 'Pablo', ajustes, emailPrueba_());
 }

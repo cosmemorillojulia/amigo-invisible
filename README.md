@@ -1,46 +1,53 @@
-# 🎄 Amigo Invisible
+# Amigo invisible
 
-App web para hacer el sorteo del Amigo Invisible **desde el móvil**: a cada participante le llega un correo navideño con la persona a la que tiene que regalar. Nadie, ni siquiera quien organiza, ve el resultado.
+App web para hacer el sorteo del amigo invisible **desde el móvil**: a cada participante le llega un correo con la persona a la que tiene que regalar. Nadie, ni siquiera quien organiza, ve el resultado completo.
 
-- **Web** (GitHub Pages): `index.html`, `css/`, `js/`. Aquí se gestionan participantes, exclusiones y detalles del evento.
-- **Servidor** (Google Apps Script): `backend/Code.gs`. Hace el sorteo y envía los correos desde tu cuenta de Gmail.
+- **Web** (GitHub Pages): `index.html`, `css/`, `js/`. Participantes, ajustes del evento y el sorteo.
+- **Servidor** (Google Apps Script): `backend/Code.gs`. Hace el sorteo, guarda las reglas privadas y manda los correos desde tu cuenta de Gmail.
 
 ```
-Móvil ──(lista + clave)──▶ Apps Script ──▶ sorteo ──▶ Gmail ──▶ 📧 cada participante
+Móvil ──(lista + clave)──▶ Apps Script ──▶ sorteo (+ reglas privadas) ──▶ Gmail ──▶ cada participante
   ◀──── "enviado a Ana, Luis…" (sin resultados) ────┘
 ```
 
-## Funciones
+## Qué hace
 
-- 👥 Participantes con nombre y correo. Se pueden pegar desde un Excel o una lista.
-- 🚫 Exclusiones mutuas (parejas, hermanos…) y opción de evitar intercambios cruzados (A→B y B→A).
-- ✅ Comprueba al momento si el sorteo es posible con esas reglas.
-- 🧪 **Modo prueba** (activado por defecto): todos los correos llegan a tu cuenta y ninguno a los participantes.
-- 🔒 Protección para no repetir un sorteo real por error.
-- 📮 Reenvío del correo a quien no le haya llegado, con el mismo amigo invisible (también a una dirección corregida).
-- ☁️ Lista guardada en la nube para prepararla en el ordenador y sortear desde el móvil.
-- 👀 Vista previa del correo, y la app se puede instalar en la pantalla de inicio del móvil.
+- **Participantes** con nombre y correo. Se pueden pegar de golpe desde un Excel o una lista.
+- **Modo prueba** (activado por defecto): todos los correos te llegan a ti y a los participantes no les llega nada.
+- **Protección contra repeticiones**: no deja repetir un sorteo real sin avisar antes.
+- **Reenvío** del correo a quien no le haya llegado, con la misma persona y, si hace falta, a otra dirección.
+- **Lista en la nube**: prepárala en el ordenador y haz el sorteo desde el móvil.
+- **Vista previa** del correo y opción de instalar la app en la pantalla de inicio.
+- **Opciones del organizador** (privadas): exclusiones y la opción de evitar parejas cruzadas.
+  - Se guardan en el servidor, no en el móvil.
+  - Para verlas hay que escribir la clave cada vez.
+  - No aparecen en ninguna otra parte de la app ni en los correos.
+  - Si las reglas hacen imposible el sorteo, el error que se ve no menciona a nadie.
 
 ---
 
 ## 1. Servidor en Google Apps Script
 
-Hazlo con la cuenta desde la que quieres que salgan los correos (p. ej. la cuenta del Amigo Invisible).
+Hazlo con la cuenta desde la que quieres que salgan los correos.
 
-1. Entra en <https://script.google.com> → **Nuevo proyecto** y llámalo `Amigo Invisible`.
+1. Entra en <https://script.google.com> → **Nuevo proyecto** y llámalo `Amigo invisible`.
 2. Borra el contenido de `Código.gs` y pega todo [`backend/Code.gs`](backend/Code.gs).
 3. *(Opcional, recomendado)* ⚙️ **Configuración del proyecto** → marca «Mostrar el archivo de manifiesto `appsscript.json`» y pega en él [`backend/appsscript.json`](backend/appsscript.json). Así el script pide solo los permisos mínimos.
 4. ⚙️ **Configuración del proyecto** → **Propiedades del script** → **Añadir propiedad**:
-   - `CLAVE` = una contraseña larga que solo sepas tú (es la que escribirás en la app).
-   - *(Opcional)* `EMAIL_PRUEBA` = el correo donde quieres recibir las pruebas. Por defecto llegan a la propia cuenta.
-5. En el editor, elige la función `comprobarConfiguracion` y pulsa **▶ Ejecutar**. Google pedirá permisos: *Revisar permisos* → tu cuenta → *Configuración avanzada* → *Ir a Amigo Invisible (no seguro)* → *Permitir*. Es tu propio script. Esta función **no envía nada**: solo muestra en el registro si todo está bien.
-6. *(Opcional)* Ejecuta `enviarCorreoDeMuestra` para recibir **en tu propia cuenta** un correo de ejemplo y ver el diseño.
-7. **Implementar** → **Nueva implementación** → tipo ⚙️ **Aplicación web**:
+   - `CLAVE`: una contraseña larga que solo sepas tú.
+   - *(Opcional)* `EMAIL_PRUEBA`: dónde quieres recibir las pruebas. Por defecto llegan a la propia cuenta.
+5. En el editor, elige `comprobarConfiguracion` y pulsa **▶ Ejecutar**.
+   - Google avisará de que la aplicación no está verificada: es tu propio script.
+   - Pulsa *Configuración avanzada* → *Ir a Amigo invisible (no seguro)* → *Permitir*.
+   - Esta función **no envía nada**.
+   - Si tienes varias cuentas de Google abiertas y da error, hazlo en una ventana de incógnito.
+6. *(Opcional)* Ejecuta `enviarCorreoDeMuestra` para recibir **en tu propia cuenta** un correo de ejemplo.
+7. **Implementar** → **Nueva implementación** → tipo **Aplicación web**:
    - *Ejecutar como*: **Yo**
    - *Quién tiene acceso*: **Cualquier usuario**
 8. Copia la **URL de la aplicación web** (termina en `/exec`).
 
-> **Si cambias el código más adelante**: *Implementar → Gestionar implementaciones → ✏️ Editar → Versión: Nueva versión*. Así la URL no cambia.
+> **Cada vez que cambies `Code.gs`**: pega el código nuevo, guarda y ve a *Implementar → Gestionar implementaciones → ✏️ Editar → Versión: Nueva versión → Implementar*. Así la URL no cambia.
 
 ## 2. Conectar la web con el servidor
 
@@ -57,28 +64,48 @@ La URL no es secreta: sin la `CLAVE` el servidor no hace nada, y tras 8 intentos
 ## 3. Publicar en GitHub Pages
 
 1. Crea un repositorio en GitHub (p. ej. `amigo-invisible`) y sube esta carpeta.
-2. En el repositorio: **Settings → Pages → Build and deployment** → *Source*: **Deploy from a branch** → *Branch*: `main` / `/ (root)` → **Save**.
+2. En el repositorio, ve a **Settings → Pages**. En *Source* elige **Deploy from a branch**, en *Branch* `main` / `/ (root)`, y pulsa **Save**.
 3. En un minuto estará en `https://TU-USUARIO.github.io/amigo-invisible/`.
 
-> ⚠️ El repositorio es **público**. El `.gitignore` deja fuera los `.xlsx` y los `.ipynb` antiguos porque contienen correos reales. No subas listas de correos al repositorio: la lista vive en el navegador del móvil y, si quieres, en las propiedades de tu script de Google.
+> El repositorio es **público**. El `.gitignore` deja fuera la carpeta `old/`, los `.xlsx` y los `.ipynb`, porque contienen correos reales. La lista vive en el navegador y, si la subes, en las propiedades de tu script de Google.
 
-## 4. Hacer el sorteo desde el móvil
+## 4. Hacer el sorteo
 
-1. Abre la web en el móvil. Para instalarla: en Android, menú ⋮ → *Instalar app*; en iPhone, *Compartir* → *Añadir a pantalla de inicio*.
-2. **⚙️ Ajustes**: escribe la `CLAVE` y pulsa **Probar conexión**. Rellena título, presupuesto, fecha y mensaje.
-3. **👥 Gente**: añade a los participantes (o pégalos de golpe).
-4. **🚫 Exclusiones**: añade las parejas que no pueden tocarse.
-5. **🎁 Sorteo**:
-   - Primero en **🧪 Prueba**: te llegan todos los correos a ti. Comprueba que se ven bien.
-   - Después cambia a **🎅 De verdad** y toca el regalo. 🎉
+1. **Ajustes**:
+   - Escribe la clave y pulsa *Comprobar conexión*.
+   - Rellena título, presupuesto, fecha y, si quieres, un mensaje para todos.
+2. **Participantes**: añade a la gente (o pega la lista).
+3. **Ajustes → Opciones del organizador**: pon las exclusiones que quieras. Nadie más las ve.
+4. **Sorteo**:
+   - Primero en **Prueba**: te llegan todos los correos a ti.
+   - Después cambia a **Real** y pulsa *Sortear*.
 
-Si a alguien no le llega el correo, usa **Reenviar un correo** en la pantalla del sorteo.
+Si a alguien no le llega el correo, usa *Reenviar un correo* en la pantalla del sorteo.
 
-**Truco**: prepara la lista en el ordenador, pulsa *Subir lista* (Ajustes) y en el móvil pulsa *Bajar lista*.
+## Editar el correo
+
+El diseño y los textos del correo están en [`backend/Code.gs`](backend/Code.gs), en la sección **Correos**:
+- `EMOJI_CORREO` y `FRASE_CORREO`: el emoji y la frase corta.
+- `htmlCorreo_`: el diseño.
+- `textoCorreo_`: la versión en texto plano.
+
+Para ver los cambios al momento, sin enviar nada:
+
+```
+node herramientas/vista-correo.js
+```
+
+Se abre el navegador con el correo en tamaño móvil y ordenador.
+- Cada vez que guardas `Code.gs`, la página se recarga sola.
+- Arriba puedes cambiar el nombre, el presupuesto, la fecha o el mensaje.
+- Puedes ver también la versión de prueba y el texto plano.
+- Para pararla, pulsa `Ctrl + C`.
+
+Cuando te guste, pega el `Code.gs` nuevo en Apps Script y publica una **nueva versión** (ver el aviso del paso 1).
 
 ## Límites
 
-- Gmail gratuito permite unos **100 correos al día** desde Apps Script. La app avisa si no quedan suficientes.
+- Una cuenta gratuita de Gmail puede mandar unos **100 correos al día** desde Apps Script. La app avisa si no quedan suficientes.
 - Máximo 50 participantes por sorteo.
 
 ## Tests
@@ -92,13 +119,14 @@ node --test tests/*.test.js
 ## Estructura
 
 ```
-index.html              Interfaz (4 pestañas: Gente, Exclusiones, Ajustes, Sorteo)
-css/estilos.css         Estilos navideños
+index.html              Interfaz (Participantes, Sorteo, Ajustes)
+css/estilos.css         Estilos
 js/app.js               Lógica de la web
-js/sorteo.js            Algoritmo del sorteo (para comprobar si es posible)
+js/sorteo.js            Algoritmo del sorteo (para comprobar las reglas en el panel privado)
 js/config.js            URL del servidor
-backend/Code.gs         Servidor: sorteo + envío de correos (Google Apps Script)
+backend/Code.gs         Servidor: sorteo, reglas privadas y envío de correos
 backend/appsscript.json Manifiesto con los permisos mínimos
+herramientas/           Vista previa del correo en directo
 tests/                  Tests de Node
 img/, manifest.webmanifest  Iconos e instalación como app
 ```

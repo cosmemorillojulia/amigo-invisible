@@ -1,4 +1,4 @@
-/* ───────────────────────── Amigo Invisible · app web ───────────────────────── */
+/* ───────────────────────── Amigo invisible · app web ───────────────────────── */
 (function () {
   'use strict';
 
@@ -6,15 +6,9 @@
   const LS_DATOS = 'amigoInvisible.datos.v1';
   const LS_CLAVE = 'amigoInvisible.clave.v1';
   const EMAIL_RE = /^[^\s@,;<>()]+@[^\s@,;<>()]+\.[^\s@,;<>()]{2,}$/;
-  const COLORES_AVATAR = ['#c8283c', '#1f6b4e', '#d29a2f', '#2f6fb3', '#8e3fa8', '#d2603a', '#13806f'];
-  const COLORES_LUCES = ['#ff4d5e', '#f0c05a', '#4fd38a', '#5fb6ff', '#ff9f43'];
-  const MENSAJES_ESPERA = [
-    'Los elfos están barajando los nombres…',
-    'Papá Noel revisa la lista (dos veces)…',
-    'Envolviendo cada correo con cariño…',
-    'Los renos ya van de camino…',
-    'Casi listo, ¡que no se escape nadie!…',
-  ];
+  const SVG_NS = 'http://www.w3.org/2000/svg';
+  const VISTAS = ['participantes', 'sorteo', 'ajustes'];
+  const SIN_URL = 'Falta la dirección del servidor en js/config.js.';
 
   const $ = (selector, raiz) => (raiz || document).querySelector(selector);
   const $$ = (selector, raiz) => Array.from((raiz || document).querySelectorAll(selector));
@@ -30,7 +24,7 @@
     try {
       if (valor == null) window.localStorage.removeItem(clave);
       else window.localStorage.setItem(clave, valor);
-    } catch (e) { /* almacenamiento no disponible: la app sigue funcionando en memoria */ }
+    } catch (e) { /* sin almacenamiento: la app sigue funcionando en memoria */ }
   }
 
   function nuevoId() {
@@ -40,39 +34,27 @@
   function datosIniciales() {
     return {
       participantes: [],
-      exclusiones: [],
-      ajustes: {
-        titulo: 'Navidad ' + new Date().getFullYear(),
-        presupuesto: '',
-        fecha: '',
-        mensaje: '',
-        evitarReciprocos: false,
-      },
+      ajustes: { titulo: 'Navidad ' + new Date().getFullYear(), presupuesto: '', fecha: '', mensaje: '' },
     };
   }
 
   function normalizarDatos(bruto) {
     const base = datosIniciales();
     if (!bruto || typeof bruto !== 'object') return base;
-
     const participantes = (Array.isArray(bruto.participantes) ? bruto.participantes : [])
       .filter(p => p && String(p.nombre || '').trim())
       .map(p => ({ id: String(p.id || nuevoId()), nombre: String(p.nombre).trim(), email: String(p.email || '').trim() }));
-    const ids = new Set(participantes.map(p => p.id));
-    const exclusiones = (Array.isArray(bruto.exclusiones) ? bruto.exclusiones : [])
-      .filter(x => Array.isArray(x) && x.length === 2 && x[0] !== x[1] && ids.has(String(x[0])) && ids.has(String(x[1])))
-      .map(x => [String(x[0]), String(x[1])]);
-
     const a = bruto.ajustes || {};
     const texto = (v, porDefecto) => (typeof v === 'string' ? v : porDefecto);
-    const ajustes = {
-      titulo: texto(a.titulo, base.ajustes.titulo),
-      presupuesto: texto(a.presupuesto, ''),
-      fecha: texto(a.fecha, ''),
-      mensaje: texto(a.mensaje, ''),
-      evitarReciprocos: a.evitarReciprocos === true,
+    return {
+      participantes,
+      ajustes: {
+        titulo: texto(a.titulo, base.ajustes.titulo),
+        presupuesto: texto(a.presupuesto, ''),
+        fecha: texto(a.fecha, ''),
+        mensaje: texto(a.mensaje, ''),
+      },
     };
-    return { participantes, exclusiones, ajustes };
   }
 
   function cargarDatosLocales() {
@@ -90,10 +72,6 @@
 
   const participantePorId = id => datos.participantes.find(p => p.id === id);
   const nombres = () => datos.participantes.map(p => p.nombre);
-  const exclusionesPorNombre = () => datos.exclusiones
-    .map(([a, b]) => [participantePorId(a), participantePorId(b)])
-    .filter(([a, b]) => a && b)
-    .map(([a, b]) => [a.nombre, b.nombre]);
 
   // ───────────────────────── Utilidades de interfaz ─────────────────────────
 
@@ -103,7 +81,6 @@
       if (v == null || v === false) return;
       if (k === 'class') nodo.className = v;
       else if (k === 'text') nodo.textContent = v;
-      else if (k === 'style') nodo.style.cssText = v;
       else if (k.startsWith('on')) nodo.addEventListener(k.slice(2), v);
       else nodo.setAttribute(k, v === true ? '' : v);
     });
@@ -113,22 +90,34 @@
     return nodo;
   }
 
+  function icono(nombre) {
+    const svg = document.createElementNS(SVG_NS, 'svg');
+    svg.setAttribute('class', 'icono');
+    svg.setAttribute('aria-hidden', 'true');
+    const use = document.createElementNS(SVG_NS, 'use');
+    use.setAttribute('href', '#i-' + nombre);
+    svg.append(use);
+    return svg;
+  }
+
+  function botonIcono(nombreIcono, etiqueta, accion) {
+    return el('button', { class: 'icono-boton', type: 'button', 'aria-label': etiqueta, title: etiqueta, onclick: accion }, icono(nombreIcono));
+  }
+
   let temporizadorAviso = null;
   function avisar(texto, tipo) {
     const toast = $('#toast');
     toast.textContent = texto;
     toast.className = 'toast visible ' + (tipo || '');
     clearTimeout(temporizadorAviso);
-    temporizadorAviso = setTimeout(() => { toast.className = 'toast ' + (tipo || ''); }, tipo === 'error' ? 5000 : 3200);
+    temporizadorAviso = setTimeout(() => { toast.className = 'toast ' + (tipo || ''); }, tipo === 'error' ? 5000 : 2800);
   }
 
   function confirmar(opciones) {
     const dialogo = $('#dlg-confirmar');
     $('#confirmar-titulo').textContent = opciones.titulo;
     $('#confirmar-texto').textContent = opciones.texto;
-    const ok = $('#confirmar-ok');
-    ok.textContent = opciones.ok || 'Aceptar';
-    ok.className = 'boton ' + (opciones.peligro ? 'boton-rojo' : 'boton-verde');
+    $('#confirmar-ok').textContent = opciones.ok || 'Aceptar';
     $('#confirmar-cancelar').textContent = opciones.cancelar || 'Cancelar';
     dialogo.returnValue = '';
     return new Promise(resolve => {
@@ -152,7 +141,7 @@
 
   function formatearFecha(iso) {
     const fecha = new Date(iso);
-    if (isNaN(fecha)) return 'un día anterior';
+    if (isNaN(fecha)) return 'otro día';
     return fecha.toLocaleString('es-ES', { day: 'numeric', month: 'long', hour: '2-digit', minute: '2-digit' });
   }
 
@@ -160,9 +149,11 @@
     return (Array.from(nombre.trim())[0] || '?').toUpperCase();
   }
 
-  // ───────────────────────── Navegación ─────────────────────────
+  function plural(n, singular, varios) {
+    return `${n} ${n === 1 ? singular : varios}`;
+  }
 
-  const VISTAS = ['participantes', 'exclusiones', 'ajustes', 'sorteo'];
+  // ───────────────────────── Navegación ─────────────────────────
 
   function mostrarVista(nombre, desplazar) {
     if (!VISTAS.includes(nombre)) nombre = 'participantes';
@@ -177,12 +168,10 @@
       renderSorteo();
       if (clave && CONFIG.urlBackend && !infoServidor) consultarEstado(true);
     }
-    if (history.replaceState) history.replaceState(null, '', '#' + nombre);
+    if (location.hash.slice(1) !== nombre && history.replaceState) history.replaceState(null, '', '#' + nombre);
   }
 
   $$('.pestanas button').forEach(b => b.addEventListener('click', () => mostrarVista(b.dataset.vista)));
-
-  // Cerrar diálogos con los botones marcados con data-cerrar
   $$('[data-cerrar]').forEach(b => b.addEventListener('click', () => b.closest('dialog').close()));
 
   // ───────────────────────── Participantes ─────────────────────────
@@ -192,11 +181,11 @@
   }
 
   function errorPersona(nombre, email, exceptoId) {
-    if (!nombre) return 'Escribe un nombre.';
-    if (nombre.length > 40) return 'El nombre es demasiado largo (máximo 40 letras).';
+    if (!nombre) return 'Falta el nombre.';
+    if (nombre.length > 40) return 'Ese nombre es demasiado largo.';
     if (!EMAIL_RE.test(email)) return `El correo de ${nombre} no parece válido.`;
     const repetido = datos.participantes.some(p => p.id !== exceptoId && p.nombre.toLowerCase() === nombre.toLowerCase());
-    if (repetido) return `Ya hay alguien llamado ${nombre}. Usa un nombre distinto (p. ej. con la inicial del apellido).`;
+    if (repetido) return `Ya hay alguien que se llama ${nombre}. Añade la inicial del apellido para distinguirlos.`;
     return null;
   }
 
@@ -208,7 +197,7 @@
     const error = errorPersona(nombre, email);
     if (error) {
       avisar(error, 'error');
-      (nombre && !error.startsWith('Ya hay') ? form.email : form.nombre).focus();
+      (!nombre || error.startsWith('Ya hay') ? form.nombre : form.email).focus();
       return;
     }
     datos.participantes.push({ id: nuevoId(), nombre, email });
@@ -216,10 +205,9 @@
     renderTodo();
     form.reset();
     form.nombre.focus();
-    avisar(`🎄 ${nombre} se une al sorteo`, 'exito');
+    avisar(`${nombre} ya está en la lista.`);
   });
 
-  // Intro en el campo nombre → saltar al correo
   $('#form-participante').nombre.addEventListener('keydown', ev => {
     if (ev.key === 'Enter') { ev.preventDefault(); $('#form-participante').email.focus(); }
   });
@@ -227,10 +215,9 @@
   async function quitarParticipante(id) {
     const p = participantePorId(id);
     if (!p) return;
-    const ok = await confirmar({ titulo: '¿Quitar participante?', texto: `${p.nombre} saldrá del sorteo.`, ok: 'Quitar', peligro: true });
+    const ok = await confirmar({ titulo: `¿Quitar a ${p.nombre}?`, texto: 'Dejará de estar en el sorteo.', ok: 'Quitar' });
     if (!ok) return;
     datos.participantes = datos.participantes.filter(x => x.id !== id);
-    datos.exclusiones = datos.exclusiones.filter(([a, b]) => a !== id && b !== id);
     guardar();
     renderTodo();
   }
@@ -259,10 +246,9 @@
     guardar();
     renderTodo();
     $('#dlg-editar').close();
-    avisar('✏️ Cambios guardados', 'exito');
+    avisar('Cambios guardados.');
   });
 
-  // Pegar lista
   $('#btn-pegar').addEventListener('click', () => {
     $('#pegar-texto').value = '';
     $('#pegar-error').textContent = '';
@@ -305,92 +291,23 @@
     guardar();
     renderTodo();
     $('#dlg-pegar').close();
-    const saltados = problemas.length + ignoradas.length;
-    avisar(`🎁 ${anadidos} añadido${anadidos === 1 ? '' : 's'}` + (saltados ? ` · ${saltados} línea${saltados === 1 ? '' : 's'} sin añadir` : ''), 'exito');
+    const saltadas = problemas.length + ignoradas.length;
+    avisar(`Añadidas ${plural(anadidos, 'persona', 'personas')}.` + (saltadas ? ` ${plural(saltadas, 'línea no se ha', 'líneas no se han')} podido añadir.` : ''));
   });
 
   function renderParticipantes() {
-    const lista = $('#lista-participantes');
-    lista.replaceChildren(...datos.participantes.map((p, i) => el('li', { class: 'item' },
-      el('span', { class: 'avatar', style: `--c:${COLORES_AVATAR[i % COLORES_AVATAR.length]}`, 'aria-hidden': 'true', text: inicial(p.nombre) }),
-      el('div', { class: 'item-texto' },
-        el('div', { class: 'item-nombre', text: p.nombre }),
-        el('div', { class: 'item-email', text: p.email })),
-      el('button', { class: 'icono-boton', type: 'button', 'aria-label': `Editar a ${p.nombre}`, text: '✏️', onclick: () => abrirEdicion(p.id) }),
-      el('button', { class: 'icono-boton', type: 'button', 'aria-label': `Quitar a ${p.nombre}`, text: '🗑️', onclick: () => quitarParticipante(p.id) })
+    $('#lista-participantes').replaceChildren(...datos.participantes.map(p => el('li', { class: 'fila' },
+      el('span', { class: 'inicial', 'aria-hidden': 'true', text: inicial(p.nombre) }),
+      el('div', { class: 'fila-texto' },
+        el('div', { class: 'fila-nombre', text: p.nombre }),
+        el('div', { class: 'fila-email', text: p.email })),
+      el('div', { class: 'fila-acciones' },
+        botonIcono('lapiz', `Editar a ${p.nombre}`, () => abrirEdicion(p.id)),
+        botonIcono('cerrar', `Quitar a ${p.nombre}`, () => quitarParticipante(p.id)))
     )));
     const n = datos.participantes.length;
     $('#contador').textContent = n;
     $('#vacio-participantes').hidden = n > 0;
-    const insignia = $('#insignia-participantes');
-    insignia.textContent = n;
-    insignia.hidden = n === 0;
-  }
-
-  // ───────────────────────── Exclusiones ─────────────────────────
-
-  function rellenarSelect(select, texto) {
-    const anterior = select.value;
-    select.replaceChildren(
-      el('option', { value: '', text: texto }),
-      ...datos.participantes.map(p => el('option', { value: p.id, text: p.nombre }))
-    );
-    if (participantePorId(anterior)) select.value = anterior;
-  }
-
-  $('#form-exclusion').addEventListener('submit', ev => {
-    ev.preventDefault();
-    const a = $('#ex-a').value;
-    const b = $('#ex-b').value;
-    if (!a || !b) return avisar('Elige a las dos personas.', 'error');
-    if (a === b) return avisar('Elige a dos personas distintas.', 'error');
-    const existe = datos.exclusiones.some(([x, y]) => (x === a && y === b) || (x === b && y === a));
-    if (existe) return avisar('Esa exclusión ya está en la lista.', 'error');
-    datos.exclusiones.push([a, b]);
-    guardar();
-    renderTodo();
-    $('#ex-a').value = '';
-    $('#ex-b').value = '';
-    avisar(`🚫 ${participantePorId(a).nombre} y ${participantePorId(b).nombre} no se tocarán`, 'exito');
-  });
-
-  function quitarExclusion(indice) {
-    datos.exclusiones.splice(indice, 1);
-    guardar();
-    renderTodo();
-  }
-
-  $('#aj-reciprocos').addEventListener('change', ev => {
-    datos.ajustes.evitarReciprocos = ev.target.checked;
-    guardar();
-    renderTodo();
-  });
-
-  function comprobarViabilidad() {
-    if (datos.participantes.length < 2) return { posible: false, motivo: 'Añade al menos 2 participantes.' };
-    return window.Sorteo.comprobar(nombres(), exclusionesPorNombre(), { evitarReciprocos: datos.ajustes.evitarReciprocos });
-  }
-
-  function renderExclusiones() {
-    rellenarSelect($('#ex-a'), 'Persona…');
-    rellenarSelect($('#ex-b'), 'Persona…');
-    $('#lista-exclusiones').replaceChildren(...datos.exclusiones.map(([a, b], i) => {
-      const pa = participantePorId(a);
-      const pb = participantePorId(b);
-      return el('li', { class: 'item item-exclusion' },
-        el('div', { class: 'pareja' },
-          el('span', { class: 'chip', text: pa.nombre }),
-          el('span', { class: 'x', 'aria-label': 'no se tocan con', text: '✕' }),
-          el('span', { class: 'chip', text: pb.nombre })),
-        el('button', { class: 'icono-boton', type: 'button', 'aria-label': `Quitar la exclusión entre ${pa.nombre} y ${pb.nombre}`, text: '🗑️', onclick: () => quitarExclusion(i) }));
-    }));
-    $('#aj-reciprocos').checked = datos.ajustes.evitarReciprocos;
-
-    const caja = $('#viabilidad');
-    if (!datos.participantes.length) { caja.textContent = ''; caja.className = 'viabilidad'; return; }
-    const v = comprobarViabilidad();
-    caja.className = 'viabilidad ' + (v.posible ? 'ok' : 'mal');
-    caja.textContent = v.posible ? '✅ Con estas reglas el sorteo es posible.' : '⚠️ ' + v.motivo;
   }
 
   // ───────────────────────── Ajustes ─────────────────────────
@@ -407,7 +324,7 @@
     clave = ev.target.value;
     infoServidor = null;
     if ($('#aj-recordar').checked) escribirLocal(LS_CLAVE, clave || null);
-    $('#estado-servidor').textContent = '';
+    renderEstadoServidor();
   });
 
   $('#aj-recordar').addEventListener('change', ev => {
@@ -420,7 +337,6 @@
     input.type = mostrar ? 'text' : 'password';
     ev.currentTarget.setAttribute('aria-pressed', String(mostrar));
     ev.currentTarget.setAttribute('aria-label', mostrar ? 'Ocultar la clave' : 'Mostrar la clave');
-    ev.currentTarget.textContent = mostrar ? '🙈' : '👁️';
   });
 
   function renderAjustes() {
@@ -435,24 +351,24 @@
   }
 
   function renderCabecera() {
-    $('#subtitulo').textContent = datos.ajustes.titulo.trim() || 'Navidad ' + new Date().getFullYear();
+    $('#antetitulo').textContent = datos.ajustes.titulo.trim() || 'Navidad ' + new Date().getFullYear();
   }
 
   function renderEstadoServidor(error) {
     const caja = $('#estado-servidor');
     if (error) {
       caja.className = 'estado-servidor mal';
-      caja.textContent = '❌ ' + error;
+      caja.textContent = error;
       return;
     }
+    caja.className = 'estado-servidor';
     if (!infoServidor) { caja.textContent = ''; return; }
     const s = infoServidor;
-    caja.className = 'estado-servidor';
     caja.replaceChildren(el('ul', null,
-      el('li', { text: '✅ Conectado con el servidor' }),
-      el('li', { text: `✉️ Correos disponibles hoy: ${s.cuota}` }),
-      el('li', { text: `🧪 Las pruebas llegan a: ${s.emailPrueba}` }),
-      el('li', { text: s.ultimoSorteo ? `🎁 Último sorteo real: ${formatearFecha(s.ultimoSorteo.fecha)} (${s.ultimoSorteo.participantes.length} personas)` : '🎁 Aún no se ha hecho ningún sorteo real' })
+      el('li', { text: 'Conexión correcta.' }),
+      el('li', { text: `Hoy se pueden mandar ${s.cuota} correos más.` }),
+      el('li', { text: `Las pruebas llegan a ${s.emailPrueba}.` }),
+      el('li', { text: s.ultimoSorteo ? `Último sorteo real: ${formatearFecha(s.ultimoSorteo.fecha)}.` : 'Todavía no se ha hecho ningún sorteo real.' })
     ));
   }
 
@@ -465,30 +381,27 @@
     return error;
   }
 
-  async function llamar(accion, extra) {
-    if (!CONFIG.urlBackend) {
-      throw errorConCodigo('Falta configurar la dirección del servidor en js/config.js (mira el README).', 'SIN_URL');
-    }
-    if (!clave) {
-      throw errorConCodigo('Escribe la clave del organizador en Ajustes → Conexión.', 'SIN_CLAVE_LOCAL');
-    }
+  async function llamar(accion, extra, claveUsada) {
+    const claveFinal = claveUsada == null ? clave : claveUsada;
+    if (!CONFIG.urlBackend) throw errorConCodigo(SIN_URL, 'SIN_URL');
+    if (!claveFinal) throw errorConCodigo('Falta la clave. Escríbela en Ajustes.', 'SIN_CLAVE_LOCAL');
     let respuesta;
     try {
       respuesta = await fetch(CONFIG.urlBackend, {
         method: 'POST',
         // text/plain evita la petición previa CORS, que Apps Script no admite
         headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-        body: JSON.stringify(Object.assign({ accion, clave }, extra || {})),
+        body: JSON.stringify(Object.assign({ accion, clave: claveFinal }, extra || {})),
         redirect: 'follow',
       });
     } catch (e) {
-      throw errorConCodigo('No se pudo conectar con el servidor. Revisa tu conexión y que el script esté desplegado con acceso para «Cualquier usuario».', 'RED');
+      throw errorConCodigo('No hay conexión con el servidor. Comprueba que tienes internet y que el script está publicado para «Cualquier usuario».', 'RED');
     }
     let json;
     try { json = await respuesta.json(); } catch (e) {
-      throw errorConCodigo('El servidor respondió algo inesperado. ¿La URL de js/config.js termina en /exec?', 'RESPUESTA');
+      throw errorConCodigo('El servidor ha respondido algo raro. Revisa que la dirección de js/config.js termine en /exec.', 'RESPUESTA');
     }
-    if (!json.ok) throw errorConCodigo(json.error || 'Error desconocido en el servidor.', json.codigo, json.detalle);
+    if (!json.ok) throw errorConCodigo(json.error || 'Algo ha fallado en el servidor.', json.codigo, json.detalle);
     return json;
   }
 
@@ -498,12 +411,17 @@
     setTimeout(() => $('#aj-clave').focus(), 300);
   }
 
+  function tratarError(e) {
+    if (e.codigo === 'CLAVE' || e.codigo === 'SIN_CLAVE_LOCAL') return irAClave(e.message);
+    return avisar(e.message, 'error');
+  }
+
   async function consultarEstado(silencioso) {
     try {
       infoServidor = await llamar('estado');
       renderEstadoServidor();
       renderSorteo();
-      if (!silencioso) avisar('✅ Todo listo: el servidor responde', 'exito');
+      if (!silencioso) avisar('Conexión correcta.');
     } catch (e) {
       infoServidor = null;
       renderEstadoServidor(e.message);
@@ -519,49 +437,39 @@
       $('#previa-asunto').textContent = 'Asunto: ' + r.asunto;
       $('#previa-iframe').srcdoc = r.html;
       $('#dlg-previa').showModal();
-    } catch (e) {
-      if (e.codigo === 'SIN_CLAVE_LOCAL') return irAClave(e.message);
-      avisar(e.message, 'error');
-    }
+    } catch (e) { tratarError(e); }
   }));
 
   $('#btn-guardar-nube').addEventListener('click', ev => {
-    const boton = ev.currentTarget;
-    if (!datos.participantes.length) return avisar('La lista está vacía: no hay nada que subir.', 'error');
-    return conBoton(boton, async () => {
-      const ok = await confirmar({ titulo: 'Subir lista', texto: `Se guardará la lista de este dispositivo (${datos.participantes.length} personas) en tu cuenta de Google y sustituirá a la que hubiera.`, ok: 'Subir' });
+    if (!datos.participantes.length) return avisar('La lista está vacía.', 'error');
+    return conBoton(ev.currentTarget, async () => {
+      const ok = await confirmar({ titulo: 'Subir lista', texto: `Se guardará esta lista (${plural(datos.participantes.length, 'persona', 'personas')}) y sustituirá a la que hubiera subida.`, ok: 'Subir' });
       if (!ok) return;
       try {
         await llamar('guardar', { datos });
-        avisar('☁️ Lista guardada en la nube', 'exito');
-      } catch (e) {
-        if (e.codigo === 'SIN_CLAVE_LOCAL') return irAClave(e.message);
-        avisar(e.message, 'error');
-      }
+        avisar('Lista subida.');
+      } catch (e) { tratarError(e); }
     });
   });
 
   $('#btn-cargar-nube').addEventListener('click', ev => conBoton(ev.currentTarget, async () => {
     try {
       const r = await llamar('cargar');
-      if (!r.datos) return avisar('Todavía no hay ninguna lista guardada en la nube.', 'error');
+      if (!r.datos) return avisar('Todavía no hay ninguna lista subida.', 'error');
       const nueva = normalizarDatos(r.datos);
       if (datos.participantes.length) {
-        const ok = await confirmar({ titulo: 'Descargar lista', texto: `Se sustituirá la lista de este dispositivo (${datos.participantes.length} personas) por la de la nube (${nueva.participantes.length} personas).`, ok: 'Sustituir' });
+        const ok = await confirmar({ titulo: 'Bajar lista', texto: `La lista de este dispositivo (${plural(datos.participantes.length, 'persona', 'personas')}) se cambiará por la subida (${plural(nueva.participantes.length, 'persona', 'personas')}).`, ok: 'Cambiar' });
         if (!ok) return;
       }
       datos = nueva;
       guardar();
       renderTodo();
-      avisar(`☁️ Lista descargada: ${datos.participantes.length} personas`, 'exito');
-    } catch (e) {
-      if (e.codigo === 'SIN_CLAVE_LOCAL') return irAClave(e.message);
-      avisar(e.message, 'error');
-    }
+      avisar(`Lista bajada: ${plural(datos.participantes.length, 'persona', 'personas')}.`);
+    } catch (e) { tratarError(e); }
   }));
 
   $('#btn-borrar-todo').addEventListener('click', async () => {
-    const ok = await confirmar({ titulo: '¿Borrar todo?', texto: 'Se borrarán de este dispositivo la lista, las exclusiones, los ajustes y la clave guardada. Lo que haya en la nube no se toca.', ok: 'Borrar todo', peligro: true });
+    const ok = await confirmar({ titulo: '¿Borrar todo?', texto: 'Se borran de este dispositivo la lista, los ajustes y la clave guardada. Lo que haya subido no se toca.', ok: 'Borrar' });
     if (!ok) return;
     datos = datosIniciales();
     clave = '';
@@ -571,8 +479,137 @@
     $('#resultado').hidden = true;
     renderEstadoServidor();
     renderTodo();
-    avisar('🧹 Datos borrados de este dispositivo', 'exito');
+    avisar('Datos borrados de este dispositivo.');
   });
+
+  // ───────────────────────── Opciones del organizador ─────────────────────────
+  // Las exclusiones viven en el servidor. Aquí solo se tienen en memoria mientras
+  // el panel está abierto, y para abrirlo hay que escribir la clave cada vez.
+
+  let reglas = null;
+  let claveOrganizador = '';
+
+  function bloquearOrganizador() {
+    reglas = null;
+    claveOrganizador = '';
+    $('#org-clave').value = '';
+    $('#org-error-clave').textContent = '';
+    $('#org-error').textContent = '';
+    $('#org-bloqueo').hidden = false;
+    $('#org-editor').hidden = true;
+    $('#lista-exclusiones').replaceChildren();
+    $('#viabilidad').textContent = '';
+  }
+
+  $('#btn-organizador').addEventListener('click', () => {
+    bloquearOrganizador();
+    $('#dlg-organizador').showModal();
+    setTimeout(() => $('#org-clave').focus(), 50);
+  });
+
+  $('#dlg-organizador').addEventListener('close', bloquearOrganizador);
+
+  $('#form-org-clave').addEventListener('submit', ev => {
+    ev.preventDefault();
+    const intento = $('#org-clave').value;
+    if (!intento) { $('#org-error-clave').textContent = 'Escribe la clave.'; return undefined; }
+    return conBoton($('#btn-org-entrar'), async () => {
+      try {
+        const r = await llamar('leerReglas', null, intento);
+        claveOrganizador = intento;
+        reglas = { exclusiones: r.reglas.exclusiones.map(par => par.slice()), evitarReciprocos: r.reglas.evitarReciprocos === true };
+        $('#org-clave').value = '';
+        $('#org-bloqueo').hidden = true;
+        $('#org-editor').hidden = false;
+        renderReglas();
+      } catch (e) {
+        $('#org-error-clave').textContent = e.codigo === 'CLAVE' ? 'Esa no es la clave.' : e.message;
+      }
+    });
+  });
+
+  function rellenarSelect(select, lista) {
+    const anterior = select.value;
+    select.replaceChildren(
+      el('option', { value: '', text: 'Elige…' }),
+      ...lista.map(nombre => el('option', { value: nombre, text: nombre }))
+    );
+    if (lista.includes(anterior)) select.value = anterior;
+  }
+
+  function exclusionesAplicables() {
+    const enLista = new Set(nombres().map(n => n.toLowerCase()));
+    return reglas.exclusiones.filter(([a, b]) => enLista.has(a.toLowerCase()) && enLista.has(b.toLowerCase()));
+  }
+
+  function renderReglas() {
+    if (!reglas) return;
+    const lista = nombres();
+    const enLista = new Set(lista.map(n => n.toLowerCase()));
+    rellenarSelect($('#ex-a'), lista);
+    rellenarSelect($('#ex-b'), lista);
+    $('#org-sin-gente').hidden = lista.length > 0;
+    $('#form-exclusion').hidden = lista.length < 2;
+
+    $('#lista-exclusiones').replaceChildren(...reglas.exclusiones.map(([a, b], i) => {
+      const fuera = [a, b].filter(n => !enLista.has(n.toLowerCase()));
+      const nombreEl = n => el('span', { class: enLista.has(n.toLowerCase()) ? null : 'ausente', text: n });
+      return el('li', { class: 'fila' },
+        el('div', { class: 'pareja' },
+          nombreEl(a), el('span', { class: 'separador', text: 'y' }), nombreEl(b),
+          fuera.length ? el('small', { text: `${fuera.join(' y ')} ya no ${fuera.length === 1 ? 'está' : 'están'} en la lista; esta regla no se aplica.` }) : null),
+        botonIcono('cerrar', `Quitar la exclusión entre ${a} y ${b}`, () => { reglas.exclusiones.splice(i, 1); renderReglas(); }));
+    }));
+
+    $('#org-reciprocos').checked = reglas.evitarReciprocos;
+
+    const caja = $('#viabilidad');
+    if (lista.length < 2) {
+      caja.textContent = '';
+      caja.className = 'viabilidad';
+      return;
+    }
+    const v = window.Sorteo.comprobar(lista, exclusionesAplicables(), { evitarReciprocos: reglas.evitarReciprocos });
+    caja.className = 'viabilidad' + (v.posible ? '' : ' mal');
+    caja.textContent = v.posible ? 'Con estas reglas el sorteo sale sin problema.' : v.motivo;
+  }
+
+  $('#form-exclusion').addEventListener('submit', ev => {
+    ev.preventDefault();
+    if (!reglas) return;
+    const a = $('#ex-a').value;
+    const b = $('#ex-b').value;
+    const error = $('#org-error');
+    if (!a || !b) { error.textContent = 'Elige a las dos personas.'; return; }
+    if (a === b) { error.textContent = 'Tienen que ser dos personas distintas.'; return; }
+    const existe = reglas.exclusiones.some(([x, y]) => {
+      const par = [x.toLowerCase(), y.toLowerCase()];
+      return par.includes(a.toLowerCase()) && par.includes(b.toLowerCase());
+    });
+    if (existe) { error.textContent = 'Esa pareja ya está.'; return; }
+    error.textContent = '';
+    reglas.exclusiones.push([a, b]);
+    $('#ex-a').value = '';
+    $('#ex-b').value = '';
+    renderReglas();
+  });
+
+  $('#org-reciprocos').addEventListener('change', ev => {
+    if (!reglas) return;
+    reglas.evitarReciprocos = ev.target.checked;
+    renderReglas();
+  });
+
+  $('#btn-guardar-reglas').addEventListener('click', ev => conBoton(ev.currentTarget, async () => {
+    if (!reglas) return;
+    try {
+      await llamar('guardarReglas', { reglas }, claveOrganizador);
+      $('#dlg-organizador').close();
+      avisar('Opciones guardadas.');
+    } catch (e) {
+      $('#org-error').textContent = e.message;
+    }
+  }));
 
   // ───────────────────────── Sorteo ─────────────────────────
 
@@ -582,30 +619,27 @@
 
   function renderSorteo() {
     const a = datos.ajustes;
-    const v = comprobarViabilidad();
     const n = datos.participantes.length;
-    const chips = [
-      el('li', { class: n < 2 ? 'mal' : null, text: `👥 ${n} participante${n === 1 ? '' : 's'}` }),
-      el('li', { text: `🚫 ${datos.exclusiones.length} exclusi${datos.exclusiones.length === 1 ? 'ón' : 'ones'}` }),
-    ];
-    if (a.presupuesto.trim()) chips.push(el('li', { text: '💶 ' + a.presupuesto.trim() }));
-    if (a.fecha.trim()) chips.push(el('li', { text: '📅 ' + a.fecha.trim() }));
-    if (n >= 2 && !v.posible) chips.push(el('li', { class: 'mal', text: '⚠️ ' + v.motivo }));
-    $('#resumen').replaceChildren(...chips);
+    const partes = [plural(n, 'persona', 'personas')];
+    if (a.presupuesto.trim()) partes.push(a.presupuesto.trim());
+    if (a.fecha.trim()) partes.push(a.fecha.trim());
+    $('#resumen').textContent = partes.join(' · ');
 
-    const destino = infoServidor ? infoServidor.emailPrueba : 'la cuenta de Google del script';
-    $('#nota-modo').textContent = modoActual() === 'prueba'
-      ? `Todos los correos llegarán a ${destino}, cada uno indicando a quién iba dirigido. Sirve para comprobar que todo funciona (verás los resultados de esa prueba).`
-      : 'Cada participante recibirá su propio correo. Nadie, ni siquiera tú, verá quién le ha tocado a quién.';
+    const prueba = modoActual() === 'prueba';
+    const destino = infoServidor ? infoServidor.emailPrueba : 'la cuenta que manda los correos';
+    $('#nota-modo').textContent = prueba
+      ? `Los correos te llegan a ti (${destino}), no a los participantes. Sirve para ver que todo funciona.`
+      : 'A cada persona le llega solo su correo. El resultado completo no lo ve nadie, tampoco tú.';
 
-    const boton = $('#btn-sortear');
     if (!sorteando) {
-      boton.disabled = !v.posible;
-      $('#texto-regalo').textContent = v.posible ? 'Toca el regalo para hacer el sorteo' : (n < 2 ? 'Añade al menos 2 participantes para sortear' : 'Revisa las exclusiones para poder sortear');
+      $('#btn-sortear').disabled = n < 2;
+      $('#estado-sorteo').textContent = mensajeTrasSorteo || (n < 2
+        ? 'Hacen falta al menos dos personas.'
+        : (prueba ? `Se mandarán ${n} correos de prueba, todos a ti.` : `Se mandará un correo a cada una de las ${n} personas.`));
     }
 
     const ultimo = infoServidor && infoServidor.ultimoSorteo;
-    $('#tarjeta-reenviar').hidden = !ultimo;
+    $('#panel-reenviar').hidden = !ultimo;
     if (ultimo) {
       const select = $('#reenviar-nombre');
       const anterior = select.value;
@@ -614,72 +648,65 @@
     }
   }
 
-  function estadoRegalo(estado) {
+  function estadoSello(estado, texto) {
     const boton = $('#btn-sortear');
-    boton.classList.remove('cargando', 'abierto');
+    boton.classList.remove('cargando', 'hecho');
     if (estado) boton.classList.add(estado);
+    $('#sello-texto').textContent = texto || 'Sortear';
   }
 
-  let temporizadorEspera = null;
-  function empezarEspera() {
-    let i = 0;
-    const texto = $('#texto-regalo');
-    texto.textContent = MENSAJES_ESPERA[0];
-    temporizadorEspera = setInterval(() => {
-      i = (i + 1) % MENSAJES_ESPERA.length;
-      texto.textContent = MENSAJES_ESPERA[i];
-    }, 2300);
-  }
-  function terminarEspera() {
-    clearInterval(temporizadorEspera);
-    temporizadorEspera = null;
-  }
+  let temporizadorEnvio = null;
+  let temporizadorReposo = null;
+  let mensajeTrasSorteo = null;
 
   async function sortear(repetir) {
     if (sorteando) return;
-    const v = comprobarViabilidad();
-    if (!v.posible) return avisar(v.motivo, 'error');
-    if (!CONFIG.urlBackend) return avisar('Falta configurar la dirección del servidor en js/config.js (mira el README).', 'error');
-    if (!clave) return irAClave('Antes de sortear, escribe la clave del organizador.');
+    const n = datos.participantes.length;
+    if (n < 2) return avisar('Hacen falta al menos dos personas.', 'error');
+    if (!CONFIG.urlBackend) return avisar(SIN_URL, 'error');
+    if (!clave) return irAClave('Falta la clave. Escríbela aquí y vuelve al sorteo.');
 
     const prueba = modoActual() !== 'real';
-    const n = datos.participantes.length;
     if (!repetir) {
-      const destino = infoServidor ? infoServidor.emailPrueba : 'la cuenta de Google del script';
+      const destino = infoServidor ? infoServidor.emailPrueba : 'la cuenta que manda los correos';
       const ok = await confirmar(prueba
-        ? { titulo: '🧪 Sorteo de prueba', texto: `Se enviarán ${n} correos, TODOS a ${destino}.\nNingún participante recibirá nada.`, ok: 'Hacer la prueba' }
-        : { titulo: '🎅 ¡Sorteo de verdad!', texto: `Se enviará un correo a cada uno de los ${n} participantes con su amigo invisible.\n\n¿Están bien todos los nombres y correos?`, ok: '¡Sí, sortear!', peligro: true });
+        ? { titulo: 'Sorteo de prueba', texto: `Se mandarán ${n} correos, todos a ${destino}. A los participantes no les llega nada.`, ok: 'Mandar prueba' }
+        : { titulo: 'Sorteo real', texto: `Le llegará un correo a cada una de las ${n} personas. Antes de seguir, repasa que los correos estén bien escritos.`, ok: 'Sortear' });
       if (!ok) return;
     }
 
     sorteando = true;
+    clearTimeout(temporizadorReposo);
+    mensajeTrasSorteo = null;
     $('#resultado').hidden = true;
-    const boton = $('#btn-sortear');
-    boton.disabled = true;
-    estadoRegalo('cargando');
-    empezarEspera();
+    $('#btn-sortear').disabled = true;
+    estadoSello('cargando', 'Sorteando');
+    $('#estado-sorteo').textContent = 'Haciendo el sorteo…';
+    temporizadorEnvio = setTimeout(() => { $('#estado-sorteo').textContent = 'Mandando los correos…'; }, 1200);
 
     let yaSorteado = null;
     try {
       const r = await llamar('sortear', {
         participantes: datos.participantes.map(p => ({ nombre: p.nombre, email: p.email })),
-        exclusiones: exclusionesPorNombre(),
         ajustes: datos.ajustes,
         prueba,
         repetir: repetir === true,
       });
-      terminarEspera();
-      estadoRegalo('abierto');
-      lanzarConfeti();
+      estadoSello('hecho', 'Hecho');
+      mensajeTrasSorteo = r.prueba ? 'Prueba enviada. Mira tu bandeja de entrada.' : 'Correos enviados.';
       mostrarResultado(r);
-      setTimeout(() => estadoRegalo(''), 2600);
+      temporizadorReposo = setTimeout(() => {
+        if (sorteando) return;
+        mensajeTrasSorteo = null;
+        estadoSello('');
+        renderSorteo();
+      }, 5000);
     } catch (e) {
-      terminarEspera();
-      estadoRegalo('');
+      estadoSello('');
       if (e.codigo === 'YA_SORTEADO') yaSorteado = e;
-      else if (e.codigo === 'CLAVE' || e.codigo === 'SIN_CLAVE_LOCAL') irAClave(e.message);
-      else avisar(e.message, 'error');
+      else tratarError(e);
     } finally {
+      clearTimeout(temporizadorEnvio);
       sorteando = false;
       renderSorteo();
     }
@@ -689,10 +716,9 @@
     if (yaSorteado) {
       const fecha = formatearFecha(yaSorteado.detalle && yaSorteado.detalle.fecha);
       const ok = await confirmar({
-        titulo: 'Ya hay un sorteo real',
-        texto: `El ${fecha} ya se hizo un sorteo y se enviaron los correos.\n\nSi lo repites, todos recibirán un correo NUEVO con otro amigo invisible y el anterior dejará de valer.\n\nSi solo a alguien no le llegó, usa «Reenviar un correo».`,
-        ok: 'Repetir el sorteo',
-        peligro: true,
+        titulo: 'Ya hay un sorteo hecho',
+        texto: `El ${fecha} ya se mandaron los correos. Si repites, a todos les llegará uno nuevo con otra persona y el anterior dejará de valer.\n\nSi solo es que a alguien no le ha llegado, mejor usa «Reenviar un correo».`,
+        ok: 'Repetir sorteo',
       });
       if (ok) await sortear(true);
     }
@@ -703,26 +729,24 @@
   function mostrarResultado(r) {
     const tarjeta = $('#resultado');
     const fallidos = r.fallidos || [];
-    const titulo = r.prueba ? '¡Prueba completada!' : '¡Sorteo hecho!';
     const texto = r.prueba
-      ? `Mira la bandeja de ${r.destinoPrueba}: tienes ${r.enviados.length} correos de prueba. Cuando todo esté bien, cambia a «De verdad».`
-      : `${r.enviados.length} personas ya tienen su amigo invisible en el correo. ¡Que empiece la caza de regalos!`;
+      ? `Tienes ${plural(r.enviados.length, 'correo', 'correos')} en ${r.destinoPrueba}. Si todo está bien, cambia a «Real» y vuelve a sortear.`
+      : `Se ha mandado el correo a ${plural(r.enviados.length, 'persona', 'personas')}.`;
     tarjeta.replaceChildren(...[
-      el('div', { class: 'resultado-emoji', 'aria-hidden': 'true', text: r.prueba ? '🧪' : '🎉' }),
-      el('h2', { text: titulo }),
+      el('h3', { class: 'titulo-panel', text: r.prueba ? 'Prueba enviada' : 'Correos enviados' }),
       el('p', { class: 'nota', text: texto }),
-      el('ul', { class: 'lista-enviados' },
-        r.enviados.map(nombre => el('li', { text: '✅ ' + nombre })),
-        fallidos.map(f => el('li', { class: 'fallo', title: f.error, text: '❌ ' + f.nombre }))),
-      fallidos.length ? el('p', { class: 'nota', text: r.prueba
-        ? 'Algunos correos de prueba fallaron: ' + fallidos.map(f => `${f.nombre} (${f.error})`).join(', ')
-        : 'A los marcados con ❌ no les llegó: usa «Reenviar un correo» (puedes corregir su dirección).' }) : null,
+      el('ul', { class: 'lista' },
+        r.enviados.map(nombre => el('li', { class: 'fila' }, icono('check'), el('span', { text: nombre }))),
+        fallidos.map(f => el('li', { class: 'fila fallo' }, icono('cerrar'), el('span', null, f.nombre, el('small', { text: f.error }))))),
+      fallidos.length && !r.prueba
+        ? el('p', { class: 'nota', text: 'A los que tienen una cruz no les ha llegado. Puedes reenviárselo abajo, con otro correo si hace falta.' })
+        : null,
       el('div', { class: 'botones' },
-        el('button', { class: 'boton boton-suave', type: 'button', text: 'Cerrar', onclick: () => { tarjeta.hidden = true; } })),
+        el('button', { class: 'boton boton-secundario', type: 'button', text: 'Cerrar', onclick: () => { tarjeta.hidden = true; } })),
     ].filter(Boolean));
     tarjeta.hidden = false;
     tarjeta.focus({ preventScroll: true });
-    tarjeta.scrollIntoView({ behavior: animacionReducida() ? 'auto' : 'smooth', block: 'center' });
+    tarjeta.scrollIntoView({ behavior: animacionReducida() ? 'auto' : 'smooth', block: 'nearest' });
   }
 
   $('#btn-reenviar').addEventListener('click', ev => {
@@ -731,7 +755,7 @@
     if (!nombre) return undefined;
     if (email && !EMAIL_RE.test(email)) return avisar('Ese correo no parece válido.', 'error');
     return conBoton(ev.currentTarget, async () => {
-      const ok = await confirmar({ titulo: '📮 Reenviar', texto: `Se reenviará a ${nombre}${email ? ' (a ' + email + ')' : ''} el mismo amigo invisible que le tocó.`, ok: 'Reenviar' });
+      const ok = await confirmar({ titulo: 'Reenviar', texto: `A ${nombre} le volverá a llegar el correo${email ? ' en ' + email : ''}, con la misma persona que le tocó.`, ok: 'Reenviar' });
       if (!ok) return;
       try {
         const r = await llamar('reenviar', email ? { nombre, email } : { nombre });
@@ -740,22 +764,12 @@
           if (local) { local.email = email; guardar(); renderParticipantes(); }
         }
         $('#reenviar-email').value = '';
-        avisar(`📮 Reenviado a ${r.reenviado}`, 'exito');
-      } catch (e) {
-        if (e.codigo === 'CLAVE' || e.codigo === 'SIN_CLAVE_LOCAL') return irAClave(e.message);
-        avisar(e.message, 'error');
-      }
+        avisar(`Correo reenviado a ${r.reenviado}.`);
+      } catch (e) { tratarError(e); }
     });
   });
 
-  // ───────────────────────── Efectos navideños ─────────────────────────
-
-  function colgarLuces() {
-    const cantidad = Math.ceil(window.innerWidth / 52) + 1;
-    $('.luces').replaceChildren(...Array.from({ length: cantidad }, (_, i) => el('li', {
-      style: `--c:${COLORES_LUCES[i % COLORES_LUCES.length]};--d:${((i * 0.37) % 2.2).toFixed(2)}s`,
-    })));
-  }
+  // ───────────────────────── Nieve ─────────────────────────
 
   function iniciarNieve() {
     const lienzo = $('#nieve');
@@ -766,15 +780,15 @@
     const copos = [];
 
     function nuevoCopo(enCualquierAltura) {
-      const r = Math.random() * 2.3 + 0.7;
+      const r = Math.random() * 1.4 + 0.4;
       return {
         x: Math.random() * ancho,
-        y: enCualquierAltura ? Math.random() * alto : -6,
+        y: enCualquierAltura ? Math.random() * alto : -4,
         r,
-        vy: r * 0.32 + Math.random() * 0.35,
+        vy: r * 0.22 + Math.random() * 0.18,
         fase: Math.random() * Math.PI * 2,
-        deriva: Math.random() * 0.6 + 0.2,
-        alfa: Math.random() * 0.45 + 0.35,
+        deriva: Math.random() * 0.4 + 0.1,
+        alfa: Math.random() * 0.3 + 0.12,
       };
     }
 
@@ -785,7 +799,7 @@
       lienzo.width = Math.round(ancho * dpr);
       lienzo.height = Math.round(alto * dpr);
       ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-      const objetivo = Math.round(Math.min(150, (ancho * alto) / 7500));
+      const objetivo = Math.round(Math.min(70, (ancho * alto) / 14000));
       while (copos.length < objetivo) copos.push(nuevoCopo(true));
       copos.length = objetivo;
     }
@@ -795,14 +809,14 @@
       const dt = Math.min((ahora - anterior) / 16.67, 3);
       anterior = ahora;
       ctx.clearRect(0, 0, ancho, alto);
-      ctx.fillStyle = '#ffffff';
+      ctx.fillStyle = '#ebe3d3';
       for (let i = 0; i < copos.length; i++) {
         const c = copos[i];
-        c.fase += 0.012 * dt;
+        c.fase += 0.008 * dt;
         c.y += c.vy * dt;
-        c.x += Math.sin(c.fase) * c.deriva * 0.5 * dt;
-        if (c.y > alto + 6) { copos[i] = nuevoCopo(false); continue; }
-        if (c.x > ancho + 6) c.x = -6; else if (c.x < -6) c.x = ancho + 6;
+        c.x += Math.sin(c.fase) * c.deriva * 0.4 * dt;
+        if (c.y > alto + 4) { copos[i] = nuevoCopo(false); continue; }
+        if (c.x > ancho + 4) c.x = -4; else if (c.x < -4) c.x = ancho + 4;
         ctx.globalAlpha = c.alfa;
         ctx.beginPath();
         ctx.arc(c.x, c.y, c.r, 0, Math.PI * 2);
@@ -814,62 +828,6 @@
 
     ajustar();
     window.addEventListener('resize', ajustar);
-    window.requestAnimationFrame(cuadro);
-  }
-
-  function lanzarConfeti() {
-    const lienzo = $('#confeti');
-    const ctx = lienzo.getContext && lienzo.getContext('2d');
-    if (!ctx || animacionReducida()) return;
-    const dpr = Math.min(window.devicePixelRatio || 1, 2);
-    const ancho = window.innerWidth;
-    const alto = window.innerHeight;
-    lienzo.width = Math.round(ancho * dpr);
-    lienzo.height = Math.round(alto * dpr);
-    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-
-    const caja = $('#btn-sortear').getBoundingClientRect();
-    const ox = caja.left + caja.width / 2;
-    const oy = caja.top + caja.height * 0.35;
-    const colores = ['#f0c05a', '#c8283c', '#2fa36b', '#ffffff', '#e2475a', '#5fb6ff'];
-    const piezas = Array.from({ length: 170 }, () => {
-      const angulo = -Math.PI / 2 + (Math.random() - 0.5) * Math.PI * 1.25;
-      const velocidad = 6 + Math.random() * 10;
-      return {
-        x: ox, y: oy,
-        vx: Math.cos(angulo) * velocidad,
-        vy: Math.sin(angulo) * velocidad,
-        w: 6 + Math.random() * 6,
-        h: 4 + Math.random() * 6,
-        giro: Math.random() * Math.PI,
-        vgiro: (Math.random() - 0.5) * 0.35,
-        color: colores[Math.floor(Math.random() * colores.length)],
-      };
-    });
-
-    const inicio = performance.now();
-    const duracion = 3600;
-    function cuadro(ahora) {
-      const t = ahora - inicio;
-      ctx.clearRect(0, 0, ancho, alto);
-      ctx.globalAlpha = Math.max(0, 1 - Math.max(0, t - duracion * 0.6) / (duracion * 0.4));
-      piezas.forEach(p => {
-        p.vy += 0.24;
-        p.vx *= 0.985;
-        p.vy *= 0.985;
-        p.x += p.vx;
-        p.y += p.vy;
-        p.giro += p.vgiro;
-        ctx.save();
-        ctx.translate(p.x, p.y);
-        ctx.rotate(p.giro);
-        ctx.fillStyle = p.color;
-        ctx.fillRect(-p.w / 2, -p.h / 2, p.w, p.h * Math.abs(Math.cos(p.giro * 1.7)) + 1);
-        ctx.restore();
-      });
-      if (t < duracion) window.requestAnimationFrame(cuadro);
-      else ctx.clearRect(0, 0, ancho, alto);
-    }
     window.requestAnimationFrame(cuadro);
   }
 
@@ -893,18 +851,13 @@
   function renderTodo() {
     renderCabecera();
     renderParticipantes();
-    renderExclusiones();
     renderAjustes();
     renderSorteo();
   }
 
+  // Reescribe lo guardado en el formato actual (borra exclusiones de versiones antiguas).
+  if (leerLocal(LS_DATOS)) guardar();
   renderTodo();
-  colgarLuces();
-  let temporizadorLuces = null;
-  window.addEventListener('resize', () => {
-    clearTimeout(temporizadorLuces);
-    temporizadorLuces = setTimeout(colgarLuces, 200);
-  });
   iniciarNieve();
   mostrarVista(location.hash.slice(1) || 'participantes', false);
   window.addEventListener('hashchange', () => mostrarVista(location.hash.slice(1)));
