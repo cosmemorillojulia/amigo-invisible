@@ -397,6 +397,22 @@ test('guardar y cargar la lista (sin exclusiones)', () => {
   assert.equal(b.post({ clave: CLAVE, accion: 'estado' }).hayListaGuardada, true);
 });
 
+test('la lista subida conserva su versión, para que al bajarla no se tome por antigua', () => {
+  const b = crearBackend();
+  const datos = {
+    version: 3,
+    participantes: [{ id: 'x1', nombre: 'Íñigo', email: 'inigo@example.com' }],
+    ajustes: { fecha: '', lugar: { modo: 'ninguno', nombre: '', direccion: '' } },
+  };
+  b.post({ clave: CLAVE, accion: 'guardar', datos });
+  assert.deepEqual(b.post({ clave: CLAVE, accion: 'cargar' }).datos, datos);
+
+  for (const version of ['3', 0, -1, 2.5, null]) {
+    b.post({ clave: CLAVE, accion: 'guardar', datos: Object.assign({}, datos, { version }) });
+    assert.equal('version' in b.post({ clave: CLAVE, accion: 'cargar' }).datos, false, `versión ${JSON.stringify(version)} no válida`);
+  }
+});
+
 test('el correo no lleva frases genéricas y el mensaje del organizador va como texto normal', () => {
   const b = crearBackend();
   const mensaje = 'Primera línea\nsegunda línea\n\nOtro párrafo <b>sin</b> HTML';
@@ -409,11 +425,15 @@ test('el correo no lleva frases genéricas y el mensaje del organizador va como 
   assert.equal(segundo.texto, 'Otro párrafo &lt;b&gt;sin&lt;/b&gt; HTML');
   for (const p of [primero, segundo]) assert.ok(!p.estilo.includes('italic') && !p.estilo.includes('border-left'), 'sin formato de cita');
 
-  // Sin mensaje no queda ningún párrafo extra después de los datos
+  // Sin mensaje no queda ningún párrafo suelto: el saludo va seguido de «Ya está hecho el sorteo»…
   const sinMensaje = b.post({ clave: CLAVE, accion: 'vistaPrevia', ajustes: { presupuesto: '20 €' } }).html;
-  assert.ok(!sinMensaje.includes('Otro párrafo'));
-  const textoPlano = b.post({ clave: CLAVE, accion: 'vistaPrevia', ajustes: {} });
-  assert.equal(textoPlano.ok, true);
+  assert.match(sinMensaje, /¡Hola, [^<]+!<\/p>\s*<p [^>]*>Ya está hecho el sorteo y/);
+  // …y después de los datos solo viene la estrella del pie.
+  const trasDatos = sinMensaje.slice(sinMensaje.indexOf('>Presupuesto<'), sinMensaje.indexOf('&#10022;'));
+  assert.ok(trasDatos.length > 0 && !trasDatos.includes('<p'), 'no hay párrafos después de los datos');
+
+  const vacio = b.post({ clave: CLAVE, accion: 'vistaPrevia', ajustes: {} });
+  assert.equal(vacio.ok, true);
 });
 
 test('lugar: no mostrar, por definir o dirección con enlace a Google Maps', () => {
@@ -465,6 +485,19 @@ test('el lugar llega en el correo real y en el texto plano, también al reenviar
   assert.ok(b.correos[0].htmlBody.includes('Casa de Ana'));
 });
 
+test('el mensaje del organizador va entre el saludo y «Ya está hecho el sorteo»', () => {
+  const b = crearBackend();
+  b.post(sorteoReal({ ajustes: { titulo: 'Navidad', presupuesto: '20 €', mensaje: 'Primer párrafo\n\nSegundo párrafo' } }));
+  for (const texto of [b.correos[0].htmlBody, b.correos[0].body]) {
+    const hola = texto.indexOf('¡Hola, ');
+    const mensaje = texto.indexOf('Primer párrafo');
+    const hecho = texto.indexOf('Ya está hecho el sorteo y'); // sin contar el texto oculto de la bandeja de entrada
+    assert.ok(hola >= 0 && hola < mensaje && texto.indexOf('Segundo párrafo') < hecho, 'orden: saludo, mensaje, sorteo');
+    assert.ok(hecho < texto.indexOf('Presupuesto'), 'los datos siguen después');
+  }
+  assert.match(b.correos[0].body, /^¡Hola, .+!\n\nPrimer párrafo\n\nSegundo párrafo\n\nYa está hecho el sorteo/m);
+});
+
 test('la fecha va antes que el presupuesto, en el HTML y en el texto plano', () => {
   const b = crearBackend();
   b.post(sorteoReal({ ajustes: { titulo: 'Navidad', presupuesto: '20 €', fecha: '24 de diciembre', lugar: { modo: 'pendiente' } } }));
@@ -487,10 +520,20 @@ test('el correo trae modo oscuro y todas sus clases tienen color en claro y en o
   const usadas = new Set([...html.matchAll(/class="([^"]+)"/g)].flatMap(m => m[1].split(' ')));
   assert.ok(usadas.size > 5);
   for (const clase of usadas) {
-    assert.match(clase, /^ai-/);
+    assert.match(clase, /^ai-[a-z-]+$/, 'clases en minúsculas: algunos programas de correo no respetan mayúsculas');
     assert.ok(html.includes(`    .${clase} {`), `falta el color oscuro de ${clase}`);
     assert.ok(html.includes(`[data-ogs`) && new RegExp(`\\[data-ogs[bc]\\] \\.${clase} `).test(html), `falta ${clase} para Outlook`);
   }
+  // Las etiquetas (FECHA, PRESUPUESTO, LUGAR) se leen bien sobre la caja en modo claro (contraste ≥ 3,5:1).
+  const luminancia = hex => {
+    const [r, g, b] = [1, 3, 5].map(i => parseInt(hex.slice(i, i + 2), 16) / 255)
+      .map(c => (c <= 0.03928 ? c / 12.92 : ((c + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  const colorEnLinea = (clase, propiedad) => html.match(new RegExp(`class="${clase}" style="[^"]*${propiedad}:(#[0-9a-f]{6});`))[1];
+  const [l1, l2] = [luminancia(colorEnLinea('ai-caja', 'background-color')), luminancia(colorEnLinea('ai-oro', 'color'))].sort((x, y) => y - x);
+  assert.ok((l1 + 0.05) / (l2 + 0.05) >= 3.5, 'las etiquetas doradas tienen poco contraste');
+
   // Cada elemento con clase lleva también su color claro en línea (Gmail ignora el <style> de modo oscuro).
   for (const m of html.matchAll(/<[a-z]+ class="[^"]+" style="([^"]*)"/g)) {
     assert.match(m[1], /(color|background-color|border-color):#[0-9a-f]{6};/);

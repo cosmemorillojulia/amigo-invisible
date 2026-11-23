@@ -76,7 +76,7 @@ La URL no es secreta: sin la `CLAVE` el servidor no hace nada, y tras 8 intentos
 
 1. **Ajustes**:
    - Escribe la clave y pulsa *Comprobar conexión*.
-   - Rellena título, presupuesto, fecha y, si quieres, un mensaje para todos.
+   - Rellena fecha, presupuesto, lugar y, si quieres, un mensaje para todos (sale justo después del saludo).
 2. **Participantes**: añade a la gente (o pega la lista).
 3. **Ajustes → Opciones del organizador**: pon las exclusiones y asignaciones fijas que quieras. Nadie más las ve.
 4. **Sorteo**:
@@ -95,7 +95,7 @@ El diseño y los textos del correo están en [`backend/Code.gs`](backend/Code.gs
 
 Sobre el modo oscuro:
 - Mail del iPhone, Apple Mail y Outlook usan los colores oscuros de `COLORES_CORREO`.
-- Gmail no deja elegirlos: en el móvil invierte los colores por su cuenta. Por eso en claro todo el texto va oscuro sobre fondo claro, para que la inversión salga bien.
+- Gmail no deja elegirlos: en el móvil aplica su propio modo oscuro.
 
 Para ver los cambios al momento, sin enviar nada:
 

@@ -75,18 +75,21 @@
 
   function datosIniciales() {
     return {
-      version: 2,
+      version: 3,
       participantes: [],
       // Título vacío = automático («Navidad» + año), para que no se quede anticuado.
       ajustes: { titulo: '', presupuesto: '', fecha: fechaPorDefecto(), mensaje: '', lugar: normalizarLugar(null) },
     };
   }
 
-  /** modo: 'ninguno' (no sale en el correo), 'pendiente' («Por definir») o 'direccion'. */
+  /**
+   * modo: 'direccion' (por defecto; si se deja en blanco no sale en el correo),
+   * 'pendiente' («Por definir») o 'ninguno' (no sale en el correo).
+   */
   function normalizarLugar(lugar) {
     const l = lugar && typeof lugar === 'object' ? lugar : {};
     return {
-      modo: ['ninguno', 'pendiente', 'direccion'].includes(l.modo) ? l.modo : 'ninguno',
+      modo: ['ninguno', 'pendiente', 'direccion'].includes(l.modo) ? l.modo : 'direccion',
       nombre: typeof l.nombre === 'string' ? l.nombre : '',
       direccion: typeof l.direccion === 'string' ? l.direccion : '',
     };
@@ -108,15 +111,18 @@
     if (fecha && fechaDesdeIso(fecha) < hoySinHora()) fecha = base.ajustes.fecha;
     // «Navidad 2026» y similares pasan a automático, para que el año se actualice solo.
     const titulo = texto(a.titulo, '').trim();
+    // Antes de la versión 3 el lugar venía en «No mostrar»: si no se había escrito nada, pasa a «Dirección».
+    const lugar = normalizarLugar(a.lugar);
+    if (!(bruto.version >= 3) && lugar.modo === 'ninguno' && !lugar.nombre.trim() && !lugar.direccion.trim()) lugar.modo = 'direccion';
     return {
-      version: 2,
+      version: 3,
       participantes,
       ajustes: {
         titulo: /^Navidad \d{4}$/i.test(titulo) ? '' : titulo,
         presupuesto: texto(a.presupuesto, ''),
         fecha,
         mensaje: texto(a.mensaje, ''),
-        lugar: normalizarLugar(a.lugar),
+        lugar,
       },
     };
   }
@@ -404,20 +410,30 @@
       datos.ajustes.lugar[campo] = ev.target.value;
       guardar();
       renderEnlaceMapa();
+      renderAyudaLugar();
     });
   });
 
-  const AYUDA_LUGAR = {
-    ninguno: 'El lugar no saldrá en el correo.',
-    pendiente: 'En el correo saldrá «Lugar: Por definir».',
-    direccion: 'En el correo, la calle será un enlace a Google Maps.',
-  };
+  function renderAyudaLugar() {
+    const lugar = datos.ajustes.lugar;
+    let direccion = 'En el correo, la calle será un enlace a Google Maps.';
+    if (!lugar.direccion.trim()) {
+      direccion = lugar.nombre.trim()
+        ? 'Saldrá el nombre del sitio, sin enlace al mapa. Añade la calle para que lo tenga.'
+        : 'Mientras esté en blanco, el lugar no saldrá en el correo.';
+    }
+    $('#lugar-ayuda').textContent = {
+      ninguno: 'El lugar no saldrá en el correo.',
+      pendiente: 'En el correo saldrá «Lugar: Por definir».',
+      direccion,
+    }[lugar.modo];
+  }
 
   function renderLugar() {
     const lugar = datos.ajustes.lugar;
     $$('input[name=lugar-modo]').forEach(radio => { radio.checked = radio.value === lugar.modo; });
     $('#lugar-detalle').hidden = lugar.modo !== 'direccion';
-    $('#lugar-ayuda').textContent = AYUDA_LUGAR[lugar.modo];
+    renderAyudaLugar();
     if (document.activeElement !== $('#aj-lugar-nombre')) $('#aj-lugar-nombre').value = lugar.nombre;
     if (document.activeElement !== $('#aj-lugar-direccion')) $('#aj-lugar-direccion').value = lugar.direccion;
     renderEnlaceMapa();

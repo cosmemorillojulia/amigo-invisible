@@ -112,7 +112,7 @@ const PAGINA = `<!doctype html>
   <label>Título<input type="text" id="titulo"></label>
   <label>Presupuesto<input type="text" id="presupuesto"></label>
   <label>Fecha<input type="text" id="fecha"></label>
-  <label>Lugar<select id="lugarModo"><option value="ninguno">No mostrar</option><option value="pendiente">Por definir</option><option value="direccion">Dirección</option></select></label>
+  <label>Lugar<select id="lugarModo"><option value="direccion">Dirección</option><option value="pendiente">Por definir</option><option value="ninguno">No mostrar</option></select></label>
   <label>Sitio<input type="text" id="lugarNombre"></label>
   <label>Calle<input type="text" id="lugarDireccion" style="width:220px"></label>
   <label>Mensaje para todos<textarea id="mensaje"></textarea></label>

@@ -105,7 +105,10 @@ function accionEstado_() {
 function accionGuardar_(peticion) {
   const datos = peticion.datos;
   if (!datos || !Array.isArray(datos.participantes)) throw error_('No hay ninguna lista que guardar.', 'DATOS');
-  const texto = JSON.stringify({ participantes: datos.participantes, ajustes: datos.ajustes || {} });
+  const guardado = { participantes: datos.participantes, ajustes: datos.ajustes || {} };
+  // La versión hace falta para que, al bajar la lista, la app no la tome por una antigua y la «actualice».
+  if (Number.isInteger(datos.version) && datos.version > 0) guardado.version = datos.version;
+  const texto = JSON.stringify(guardado);
   if (bytes_(texto) > MAX_BYTES_PROPIEDAD) throw error_('La lista es demasiado grande para guardarla.', 'TAMANO');
   PropertiesService.getScriptProperties().setProperty('DATOS', texto);
   return { guardado: new Date().toISOString() };
@@ -500,6 +503,7 @@ function textoCorreo_(d) {
   const lineas = [];
   if (d.prueba) lineas.push(`(Esto es una prueba. En el sorteo de verdad, este correo le llegaría a ${d.nombre}, ${d.emailReal}.)`, '');
   lineas.push(`¡Hola, ${d.nombre}!`, '');
+  if (a.mensaje) lineas.push(a.mensaje, '');
   lineas.push(`Ya está hecho el sorteo y te ha tocado regalar a ${d.asignado}.`);
   const detalles = [];
   if (a.fecha) detalles.push(`Fecha: ${a.fecha}`);
@@ -511,34 +515,33 @@ function textoCorreo_(d) {
     if (lugar.direccion) detalles.push('Mapa: ' + enlaceMapa_(lugar.direccion));
   }
   if (detalles.length) lineas.push('', ...detalles);
-  if (a.mensaje) lineas.push('', a.mensaje);
   return lineas.join('\n');
 }
 
 /**
  * Colores del correo: cada papel tiene su color en claro y en modo oscuro.
  *
- * En claro todo el texto va oscuro sobre fondo claro. Gmail no deja elegir los
- * colores del modo oscuro (los invierte él solo en el móvil), y con esta base la
- * inversión sale limpia y todo se sigue leyendo.
- *
- * Apple Mail, Mail del iPhone y Outlook sí respetan un modo oscuro propio: ahí
- * se usan los colores de la app (verde muy oscuro, crema y dorado).
+ * En claro: cabecera verde muy oscuro, papel crema y detalles dorados.
+ * El modo oscuro solo lo usan los programas que lo respetan (Mail del iPhone,
+ * Apple Mail y Outlook): ahí todo pasa a los colores de la app. Gmail no deja
+ * elegirlo y aplica su propio modo oscuro.
  */
 const COLORES_CORREO = {
-  //          propiedad           claro      oscuro
-  fondo:    ['background-color', '#e8e9e2', '#0d1915'],
-  cabecera: ['background-color', '#dfe6dc', '#1a3029'],
-  papel:    ['background-color', '#fbf7ef', '#13241e'],
-  caja:     ['background-color', '#f3ecdf', '#1a2f28'],
-  raya:     ['background-color', '#b08d52', '#c4a46a'],
-  tinta:    ['color', '#2a2520', '#ebe3d3'],
-  suave:    ['color', '#6b6257', '#a9a08f'],
-  titulo:   ['color', '#1f3a2f', '#efe7d8'],
-  nombre:   ['color', '#1f3a2f', '#e0c690'],
-  oro:      ['color', '#94733d', '#c4a46a'],
-  borde:    ['border-color', '#e3d8c4', '#2c4139'],
-  aviso:    ['border-color', '#b08d52', '#c4a46a'],
+  //               propiedad           claro      oscuro
+  fondo:         ['background-color', '#ebe3d4', '#0d1915'],
+  cabecera:      ['background-color', '#13241e', '#1a3029'],
+  papel:         ['background-color', '#fbf7ef', '#13241e'],
+  caja:          ['background-color', '#f3ecdf', '#1a2f28'],
+  raya:          ['background-color', '#b08d52', '#c4a46a'],
+  tinta:         ['color', '#2a2520', '#ebe3d3'],
+  suave:         ['color', '#6b6257', '#a9a08f'],
+  titulo:        ['color', '#efe7d8', '#efe7d8'],
+  'oro-cabecera': ['color', '#d6bb86', '#d6bb86'],
+  nombre:        ['color', '#1f3a2f', '#e0c690'],
+  // Etiquetas pequeñas sobre fondo claro: un dorado más oscuro para que se lean bien.
+  oro:           ['color', '#94733d', '#c4a46a'],
+  borde:         ['border-color', '#e3d8c4', '#2c4139'],
+  aviso:         ['border-color', '#b08d52', '#c4a46a'],
 };
 
 /** class + style en línea (en claro) para uno o varios papeles: atributos(['papel'], 'padding:0;') */
@@ -617,13 +620,13 @@ function htmlCorreo_(d) {
          </td></tr>`);
   }
   const bloqueDatos = filas.length
-    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" ${at(['caja'], `margin:0 0 ${a.mensaje ? 28 : 0}px;border-radius:10px;`)}>${filas.join('')}</table>`
+    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" ${at(['caja'], 'border-radius:10px;')}>${filas.join('')}</table>`
     : '';
 
-  // El mensaje del organizador va tal cual, como texto normal: una línea en blanco empieza un párrafo nuevo.
-  const parrafosMensaje = a.mensaje.split(/\n\s*\n/).map(t => t.trim()).filter(Boolean);
-  const bloqueMensaje = parrafosMensaje
-    .map((t, i) => `<p ${at(['tinta'], parrafo + (i === parrafosMensaje.length - 1 ? 'margin-bottom:0;' : ''))}>${e(t).replace(/\n/g, '<br>')}</p>`)
+  // El mensaje del organizador va tal cual, como texto normal, justo después del saludo.
+  // Una línea en blanco empieza un párrafo nuevo.
+  const bloqueMensaje = a.mensaje.split(/\n\s*\n/).map(t => t.trim()).filter(Boolean)
+    .map(t => `<p ${at(['tinta'], parrafo)}>${e(t).replace(/\n/g, '<br>')}</p>`)
     .join('\n          ');
 
   return `<!DOCTYPE html>
@@ -643,13 +646,14 @@ function htmlCorreo_(d) {
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:520px;">
         ${aviso}
         <tr><td ${at(['cabecera'], 'border-radius:12px 12px 0 0;padding:30px 24px 26px;text-align:center;')}>
-          <div ${at(['oro'], `font-family:${sans};font-size:11px;letter-spacing:3px;text-transform:uppercase;`)}>${e(a.titulo)}</div>
-          <div ${at(['titulo'], `margin-top:10px;font-family:${serif};font-size:32px;line-height:1.1;`)}>Amigo <em ${at(['oro'])}>Invisible</em></div>
+          <div ${at(['oro-cabecera'], `font-family:${sans};font-size:11px;letter-spacing:3px;text-transform:uppercase;`)}>${e(a.titulo)}</div>
+          <div ${at(['titulo'], `margin-top:10px;font-family:${serif};font-size:32px;line-height:1.1;`)}>Amigo <em ${at(['oro-cabecera'])}>Invisible</em></div>
         </td></tr>
         <tr><td ${at(['papel'], 'border-radius:0 0 12px 12px;padding:34px 24px 32px;')}>
           <p ${at(['tinta'], parrafo)}>¡Hola, ${e(d.nombre)}!</p>
+          ${bloqueMensaje}
           <p ${at(['tinta'], parrafo + 'margin-bottom:0;')}>Ya está hecho el sorteo y este año te toca regalar a…</p>
-          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:26px 0 ${filas.length || parrafosMensaje.length ? 30 : 0}px;"><tr>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:26px 0 ${filas.length ? 30 : 0}px;"><tr>
             <td style="padding:6px 4px 0;text-align:center;">
               <div style="font-size:34px;line-height:1;">${EMOJI_CORREO}</div>
               <div ${at(['nombre'], `margin-top:14px;font-family:${serif};font-style:italic;font-size:42px;line-height:1.15;word-break:break-word;`)}>${e(d.asignado)}</div>
@@ -657,7 +661,6 @@ function htmlCorreo_(d) {
             </td>
           </tr></table>
           ${bloqueDatos}
-          ${bloqueMensaje}
         </td></tr>
         <tr><td ${at(['oro'], `padding:20px 0 0;text-align:center;font-family:${serif};font-size:15px;`)}>&#10022;</td></tr>
       </table>

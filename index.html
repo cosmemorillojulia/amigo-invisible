@@ -135,11 +135,14 @@
             <span class="fecha-cambiar" aria-hidden="true">Cambiar</span>
           </button>
         </div>
+        <label class="campo"><span>Presupuesto</span>
+          <input id="aj-presupuesto" maxlength="40" placeholder="20 €">
+        </label>
         <div class="campo"><span id="t-lugar">Lugar</span>
           <div class="segmentado segmentado-3" role="radiogroup" aria-labelledby="t-lugar">
-            <label><input type="radio" name="lugar-modo" value="ninguno"><span>No mostrar</span></label>
-            <label><input type="radio" name="lugar-modo" value="pendiente"><span>Por definir</span></label>
             <label><input type="radio" name="lugar-modo" value="direccion"><span>Dirección</span></label>
+            <label><input type="radio" name="lugar-modo" value="pendiente"><span>Por definir</span></label>
+            <label><input type="radio" name="lugar-modo" value="ninguno"><span>No mostrar</span></label>
           </div>
           <small class="ayuda" id="lugar-ayuda"></small>
         </div>
@@ -155,13 +158,12 @@
             <svg class="icono" aria-hidden="true"><use href="#i-mapa"/></svg>Comprobar en Google Maps
           </a>
         </div>
-        <label class="campo"><span>Presupuesto</span>
-          <input id="aj-presupuesto" maxlength="40" placeholder="20 €">
-        </label>
         <label class="campo"><span>Mensaje para todos (opcional)</span>
-          <textarea id="aj-mensaje" maxlength="600" rows="4" placeholder="Sale al final del correo tal cual lo escribas. Deja una línea en blanco para separar párrafos."></textarea>
+          <textarea id="aj-mensaje" maxlength="600" rows="4" placeholder="Sale en el correo justo después del saludo, tal cual lo escribas. Deja una línea en blanco para separar párrafos."></textarea>
         </label>
-        <button class="boton boton-secundario boton-ancho" id="btn-vista-previa" type="button">Ver cómo queda el correo</button>
+        <button class="boton boton-destacado boton-ancho" id="btn-vista-previa" type="button">
+          <svg class="icono" aria-hidden="true"><use href="#i-ojo"/></svg>Ver cómo queda el correo
+        </button>
       </div>
 
       <div class="panel">
