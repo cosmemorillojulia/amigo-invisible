@@ -356,30 +356,145 @@
     });
   });
 
-  function cambiarFecha(ev) {
-    const valor = ev.target.value;
-    if (valor && !fechaDesdeIso(valor)) return;
-    datos.ajustes.fecha = valor;
+  // ── Calendario propio para la fecha ──
+
+  const ATAJOS_FECHA = [
+    { nombre: 'Nochebuena', mes: 11, dia: 24 },
+    { nombre: 'Navidad', mes: 11, dia: 25 },
+    { nombre: 'Nochevieja', mes: 11, dia: 31 },
+    { nombre: 'Reyes', mes: 0, dia: 6 },
+  ];
+  let mesVisible = null;
+
+  function hoySinHora() {
+    const ahora = new Date();
+    return new Date(ahora.getFullYear(), ahora.getMonth(), ahora.getDate());
+  }
+
+  function aIso(fecha) {
+    return fecha.getFullYear() + '-' + String(fecha.getMonth() + 1).padStart(2, '0') + '-' + String(fecha.getDate()).padStart(2, '0');
+  }
+
+  /** La próxima vez que cae ese día (este año o, si ya ha pasado, el siguiente). */
+  function proximaFecha(mes, dia) {
+    const hoy = hoySinHora();
+    const fecha = new Date(hoy.getFullYear(), mes, dia);
+    return fecha < hoy ? new Date(hoy.getFullYear() + 1, mes, dia) : fecha;
+  }
+
+  function tituloMes(fecha) {
+    const mes = fecha.toLocaleDateString('es-ES', { month: 'long' });
+    return mes.charAt(0).toUpperCase() + mes.slice(1) + ' ' + fecha.getFullYear();
+  }
+
+  function renderCalendario(enfocarIso) {
+    const hoy = hoySinHora();
+    const hoyIso = aIso(hoy);
+    const elegida = datos.ajustes.fecha;
+    const anio = mesVisible.getFullYear();
+    const mes = mesVisible.getMonth();
+
+    $('#cal-titulo').textContent = tituloMes(mesVisible);
+    $('#cal-anterior').disabled = anio < hoy.getFullYear() || (anio === hoy.getFullYear() && mes <= hoy.getMonth());
+
+    // Seis semanas fijas, empezando en lunes, para que el calendario no cambie de alto.
+    const desfase = (new Date(anio, mes, 1).getDay() + 6) % 7;
+    const dias = Array.from({ length: 42 }, (_, i) => new Date(anio, mes, 1 - desfase + i));
+    const isos = dias.map(aIso);
+    const seleccionable = i => dias[i] >= hoy && dias[i].getMonth() === mes;
+    const enfocable = [enfocarIso, elegida, hoyIso].find(iso => iso && isos.includes(iso) && seleccionable(isos.indexOf(iso)))
+      || isos.find((iso, i) => seleccionable(i));
+
+    $('#cal-dias').replaceChildren(...dias.map((dia, i) => el('button', {
+      type: 'button',
+      class: 'cal-dia' + (dia.getMonth() !== mes ? ' fuera' : '') + (isos[i] === hoyIso ? ' hoy' : ''),
+      'data-fecha': isos[i],
+      'aria-label': dia.toLocaleDateString('es-ES', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }),
+      'aria-pressed': isos[i] === elegida ? 'true' : 'false',
+      'aria-current': isos[i] === hoyIso ? 'date' : null,
+      tabindex: isos[i] === enfocable ? '0' : '-1',
+      disabled: dia < hoy,
+      text: String(dia.getDate()),
+    })));
+
+    $('#cal-atajos').replaceChildren(...ATAJOS_FECHA.map(atajo => {
+      const iso = aIso(proximaFecha(atajo.mes, atajo.dia));
+      return el('button', {
+        type: 'button',
+        class: 'cal-atajo',
+        'aria-pressed': iso === elegida ? 'true' : 'false',
+        'aria-label': `${atajo.nombre}: ${fechaLarga(iso)}`,
+        text: atajo.nombre,
+        onclick: () => elegirFecha(iso),
+      });
+    }));
+    $('#cal-quitar').hidden = !elegida;
+
+    if (enfocarIso) {
+      const boton = $(`.cal-dia[data-fecha="${enfocarIso}"]`);
+      if (boton && !boton.disabled) boton.focus();
+    }
+  }
+
+  function abrirCalendario() {
+    const base = fechaDesdeIso(datos.ajustes.fecha) || proximaFecha(11, 24);
+    mesVisible = new Date(base.getFullYear(), base.getMonth(), 1);
+    $('#dlg-fecha').showModal();
+    renderCalendario();
+    const foco = $('#cal-dias [tabindex="0"]');
+    if (foco) foco.focus();
+  }
+
+  function elegirFecha(iso) {
+    datos.ajustes.fecha = iso;
     guardar();
     renderFecha();
+    renderSorteo();
+    $('#dlg-fecha').close();
   }
-  $('#aj-fecha').addEventListener('input', cambiarFecha);
-  $('#aj-fecha').addEventListener('change', cambiarFecha);
 
-  // En el ordenador, un clic en cualquier parte del campo abre el calendario.
-  // En el móvil ya lo abre el propio sistema al tocarlo.
-  $('#aj-fecha').addEventListener('click', ev => {
-    if (window.matchMedia('(pointer: coarse)').matches) return;
-    try { ev.currentTarget.showPicker(); } catch (e) { /* navegador sin showPicker: se usa el comportamiento normal */ }
+  function moverMes(delta) {
+    mesVisible = new Date(mesVisible.getFullYear(), mesVisible.getMonth() + delta, 1);
+    renderCalendario();
+  }
+
+  $('#aj-fecha').addEventListener('click', abrirCalendario);
+  $('#cal-anterior').addEventListener('click', () => moverMes(-1));
+  $('#cal-siguiente').addEventListener('click', () => moverMes(1));
+  $('#cal-quitar').addEventListener('click', () => elegirFecha(''));
+
+  $('#cal-dias').addEventListener('click', ev => {
+    const boton = ev.target.closest('.cal-dia');
+    if (boton && !boton.disabled) elegirFecha(boton.dataset.fecha);
+  });
+
+  // Teclado: flechas para moverse por días y semanas, RePág/AvPág para cambiar de mes.
+  $('#cal-dias').addEventListener('keydown', ev => {
+    const actual = ev.target.closest('.cal-dia');
+    if (!actual) return;
+    const f = fechaDesdeIso(actual.dataset.fecha);
+    const pasos = { ArrowLeft: -1, ArrowRight: 1, ArrowUp: -7, ArrowDown: 7 };
+    let destino;
+    if (Object.prototype.hasOwnProperty.call(pasos, ev.key)) destino = new Date(f.getFullYear(), f.getMonth(), f.getDate() + pasos[ev.key]);
+    else if (ev.key === 'PageUp' || ev.key === 'PageDown') destino = new Date(f.getFullYear(), f.getMonth() + (ev.key === 'PageDown' ? 1 : -1), f.getDate());
+    else return;
+    ev.preventDefault();
+    if (destino < hoySinHora()) return;
+    const iso = aIso(destino);
+    if (destino.getMonth() !== mesVisible.getMonth() || destino.getFullYear() !== mesVisible.getFullYear()) {
+      mesVisible = new Date(destino.getFullYear(), destino.getMonth(), 1);
+      renderCalendario(iso);
+      return;
+    }
+    $$('.cal-dia', $('#cal-dias')).forEach(b => { b.tabIndex = b.dataset.fecha === iso ? 0 : -1; });
+    const boton = $(`.cal-dia[data-fecha="${iso}"]`);
+    if (boton) boton.focus();
   });
 
   function renderFecha() {
-    const input = $('#aj-fecha');
-    if (document.activeElement !== input) input.value = datos.ajustes.fecha;
     const texto = $('#aj-fecha-texto');
     texto.textContent = fechaLarga(datos.ajustes.fecha) || 'Sin fecha';
     texto.classList.toggle('vacia', !datos.ajustes.fecha);
-    input.setAttribute('aria-label', 'Fecha: ' + (fechaLarga(datos.ajustes.fecha) || 'sin fecha'));
   }
 
   /** Ajustes tal y como se mandan al servidor (con la fecha ya en texto). */

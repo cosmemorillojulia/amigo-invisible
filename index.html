@@ -127,13 +127,13 @@
         <label class="campo"><span>Título</span>
           <input id="aj-titulo" maxlength="60" placeholder="Navidad">
         </label>
-        <label class="campo"><span>Fecha</span>
-          <span class="selector-fecha">
+        <div class="campo"><span id="t-fecha">Fecha</span>
+          <button type="button" class="selector-fecha" id="aj-fecha" aria-haspopup="dialog" aria-labelledby="t-fecha aj-fecha-texto">
             <svg class="icono" aria-hidden="true"><use href="#i-calendario"/></svg>
-            <span class="fecha-texto" id="aj-fecha-texto" aria-hidden="true"></span>
-            <input id="aj-fecha" type="date">
-          </span>
-        </label>
+            <span class="fecha-texto" id="aj-fecha-texto"></span>
+            <span class="fecha-cambiar" aria-hidden="true">Cambiar</span>
+          </button>
+        </div>
         <label class="campo"><span>Presupuesto</span>
           <input id="aj-presupuesto" maxlength="40" placeholder="20 €">
         </label>
@@ -286,6 +286,29 @@
           <button type="button" class="boton boton-secundario" data-cerrar>Cancelar</button>
           <button type="button" class="boton boton-primario" id="btn-guardar-reglas">Guardar</button>
         </div>
+      </div>
+    </div>
+  </dialog>
+
+  <dialog id="dlg-fecha" class="dialogo dialogo-calendario" aria-labelledby="cal-titulo">
+    <div class="dialogo-cuerpo">
+      <div class="cal-cabecera">
+        <button type="button" class="icono-boton" id="cal-anterior" aria-label="Mes anterior">
+          <svg class="icono icono-girado" aria-hidden="true"><use href="#i-flecha"/></svg>
+        </button>
+        <h3 id="cal-titulo" aria-live="polite"></h3>
+        <button type="button" class="icono-boton" id="cal-siguiente" aria-label="Mes siguiente">
+          <svg class="icono" aria-hidden="true"><use href="#i-flecha"/></svg>
+        </button>
+      </div>
+      <div class="cal-semana" aria-hidden="true">
+        <span>L</span><span>M</span><span>X</span><span>J</span><span>V</span><span>S</span><span>D</span>
+      </div>
+      <div class="cal-dias" id="cal-dias"></div>
+      <div class="cal-atajos" id="cal-atajos" aria-label="Fechas habituales"></div>
+      <div class="cal-pie">
+        <button type="button" class="boton boton-enlace" id="cal-quitar">Sin fecha</button>
+        <button type="button" class="boton boton-secundario" data-cerrar>Cancelar</button>
       </div>
     </div>
   </dialog>
