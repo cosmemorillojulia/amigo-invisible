@@ -5,7 +5,8 @@
  *
  * Abre el navegador con el correo tal y como lo genera backend/Code.gs, en
  * tamaño móvil y ordenador. Cada vez que guardas Code.gs la página se recarga
- * sola. Arriba puedes cambiar los datos de ejemplo (nombre, presupuesto…).
+ * sola. Arriba puedes cambiar los datos de ejemplo (nombre, presupuesto…) y
+ * ver el modo oscuro.
  *
  * No envía nada: solo pinta el HTML con datos inventados.
  * Para pararlo: Ctrl + C.
@@ -38,10 +39,28 @@ function cargarCodigo() {
   return contexto;
 }
 
+/**
+ * claro:   tal cual.
+ * oscuro:  el modo oscuro propio del correo (Mail del iPhone, Apple Mail, Outlook).
+ * gmail:   aproximación de Gmail en el móvil, que ignora ese modo oscuro e invierte
+ *          los colores por su cuenta (el emoji no lo invierte).
+ */
+function aplicarModo(html, modo, emoji) {
+  if (modo === 'oscuro') return html.replace('@media (prefers-color-scheme: dark)', '@media all');
+  if (modo !== 'gmail') return html;
+  const invertir = 'filter:invert(1) hue-rotate(180deg);';
+  return html
+    .replace(/<meta name="(color-scheme|supported-color-schemes)"[^>]*>/g, '')
+    .replace(/<style>[\s\S]*?<\/style>/g, '')
+    .replace('</head>', `<style>html{${invertir}background:#fff;}</style></head>`)
+    .split(emoji).join(`<span style="display:inline-block;${invertir}">${emoji}</span>`);
+}
+
 function renderizar(parametros) {
   const valor = campo => (parametros.has(campo) ? parametros.get(campo) : EJEMPLO[campo]);
   const prueba = parametros.get('prueba') === '1';
   const gs = cargarCodigo();
+  const emoji = vm.runInContext('EMOJI_CORREO', gs);
   const ajustes = gs.validarAjustes_({
     titulo: valor('titulo'),
     presupuesto: valor('presupuesto'),
@@ -52,7 +71,7 @@ function renderizar(parametros) {
   const datos = { nombre: valor('nombre'), asignado: valor('asignado'), ajustes, prueba, emailReal: 'lucia@ejemplo.com' };
   return {
     asunto: gs.asuntoCorreo_(datos.nombre, ajustes, prueba),
-    html: gs.htmlCorreo_(datos),
+    html: aplicarModo(gs.htmlCorreo_(datos), parametros.get('modo'), emoji),
     texto: gs.textoCorreo_(datos),
   };
 }
@@ -97,6 +116,7 @@ const PAGINA = `<!doctype html>
   <label>Sitio<input type="text" id="lugarNombre"></label>
   <label>Calle<input type="text" id="lugarDireccion" style="width:220px"></label>
   <label>Mensaje para todos<textarea id="mensaje"></textarea></label>
+  <label>Modo<select id="modo"><option value="claro">Claro</option><option value="oscuro">Oscuro (iPhone, Outlook)</option><option value="gmail">Oscuro de Gmail (aproximado)</option></select></label>
   <label class="check"><input type="checkbox" id="prueba"> Versión de prueba</label>
   <label class="check"><input type="checkbox" id="texto"> Texto plano</label>
   <span class="estado" id="estado"></span>
@@ -115,6 +135,7 @@ const PAGINA = `<!doctype html>
   function parametros() {
     var p = new URLSearchParams();
     CAMPOS.forEach(function (c) { p.set(c, $(c).value); });
+    p.set('modo', $('modo').value);
     p.set('prueba', $('prueba').checked ? '1' : '0');
     p.set('texto', $('texto').checked ? '1' : '0');
     return p.toString();

@@ -754,8 +754,9 @@
   });
 
   // ───────────────────────── Opciones del organizador ─────────────────────────
-  // Las exclusiones viven en el servidor. Aquí solo se tienen en memoria mientras
-  // el panel está abierto, y para abrirlo hay que escribir la clave cada vez.
+  // Las reglas (exclusiones, asignaciones fijas, parejas cruzadas) viven en el
+  // servidor. Aquí solo se tienen en memoria mientras el panel está abierto, y
+  // para abrirlo hay que escribir la clave cada vez.
 
   let reglas = null;
   let claveOrganizador = '';
@@ -764,11 +765,11 @@
     reglas = null;
     claveOrganizador = '';
     $('#org-clave').value = '';
-    $('#org-error-clave').textContent = '';
-    $('#org-error').textContent = '';
+    ['#org-error-clave', '#org-error', '#ex-error', '#fi-error'].forEach(s => { $(s).textContent = ''; });
     $('#org-bloqueo').hidden = false;
     $('#org-editor').hidden = true;
     $('#lista-exclusiones').replaceChildren();
+    $('#lista-fijas').replaceChildren();
     $('#viabilidad').textContent = '';
   }
 
@@ -788,7 +789,11 @@
       try {
         const r = await llamar('leerReglas', null, intento);
         claveOrganizador = intento;
-        reglas = { exclusiones: r.reglas.exclusiones.map(par => par.slice()), evitarReciprocos: r.reglas.evitarReciprocos === true };
+        reglas = {
+          exclusiones: r.reglas.exclusiones.map(par => par.slice()),
+          fijas: (r.reglas.fijas || []).map(par => par.slice()),
+          evitarReciprocos: r.reglas.evitarReciprocos === true,
+        };
         $('#org-clave').value = '';
         $('#org-bloqueo').hidden = true;
         $('#org-editor').hidden = false;
@@ -799,18 +804,34 @@
     });
   });
 
-  function rellenarSelect(select, lista) {
+  function rellenarSelect(select, lista, textoVacio) {
     const anterior = select.value;
     select.replaceChildren(
-      el('option', { value: '', text: 'Elige…' }),
+      el('option', { value: '', text: textoVacio || 'Elige…' }),
       ...lista.map(nombre => el('option', { value: nombre, text: nombre }))
     );
     if (lista.includes(anterior)) select.value = anterior;
   }
 
-  function exclusionesAplicables() {
+  const igual = (x, y) => x.toLowerCase() === y.toLowerCase();
+  const limpiarErroresReglas = () => { $('#ex-error').textContent = ''; $('#fi-error').textContent = ''; };
+
+  /** Las reglas cuyas dos personas siguen en la lista. */
+  function aplicables(parejas) {
     const enLista = new Set(nombres().map(n => n.toLowerCase()));
-    return reglas.exclusiones.filter(([a, b]) => enLista.has(a.toLowerCase()) && enLista.has(b.toLowerCase()));
+    return parejas.filter(([a, b]) => enLista.has(a.toLowerCase()) && enLista.has(b.toLowerCase()));
+  }
+
+  function filasReglas(parejas, separador, textoQuitar, enLista) {
+    return parejas.map(([a, b], i) => {
+      const fuera = [a, b].filter(n => !enLista.has(n.toLowerCase()));
+      const nombreEl = n => el('span', { class: enLista.has(n.toLowerCase()) ? null : 'ausente', text: n });
+      return el('li', { class: 'fila' },
+        el('div', { class: 'pareja' },
+          nombreEl(a), el('span', { class: 'separador', text: separador }), nombreEl(b),
+          fuera.length ? el('small', { text: `${fuera.join(' y ')} ya no ${fuera.length === 1 ? 'está' : 'están'} en la lista; esta regla no se aplica.` }) : null),
+        botonIcono('cerrar', textoQuitar(a, b), () => { parejas.splice(i, 1); limpiarErroresReglas(); renderReglas(); }));
+    });
   }
 
   function renderReglas() {
@@ -819,18 +840,16 @@
     const enLista = new Set(lista.map(n => n.toLowerCase()));
     rellenarSelect($('#ex-a'), lista);
     rellenarSelect($('#ex-b'), lista);
+    rellenarSelect($('#fi-a'), lista, 'Quién…');
+    rellenarSelect($('#fi-b'), lista, 'A quién…');
     $('#org-sin-gente').hidden = lista.length > 0;
     $('#form-exclusion').hidden = lista.length < 2;
+    $('#form-fija').hidden = lista.length < 2;
 
-    $('#lista-exclusiones').replaceChildren(...reglas.exclusiones.map(([a, b], i) => {
-      const fuera = [a, b].filter(n => !enLista.has(n.toLowerCase()));
-      const nombreEl = n => el('span', { class: enLista.has(n.toLowerCase()) ? null : 'ausente', text: n });
-      return el('li', { class: 'fila' },
-        el('div', { class: 'pareja' },
-          nombreEl(a), el('span', { class: 'separador', text: 'y' }), nombreEl(b),
-          fuera.length ? el('small', { text: `${fuera.join(' y ')} ya no ${fuera.length === 1 ? 'está' : 'están'} en la lista; esta regla no se aplica.` }) : null),
-        botonIcono('cerrar', `Quitar la exclusión entre ${a} y ${b}`, () => { reglas.exclusiones.splice(i, 1); renderReglas(); }));
-    }));
+    $('#lista-exclusiones').replaceChildren(...filasReglas(reglas.exclusiones, 'y',
+      (a, b) => `Quitar la exclusión entre ${a} y ${b}`, enLista));
+    $('#lista-fijas').replaceChildren(...filasReglas(reglas.fijas, 'le regala a',
+      (a, b) => `Quitar que ${a} le regale a ${b}`, enLista));
 
     $('#org-reciprocos').checked = reglas.evitarReciprocos;
 
@@ -840,7 +859,10 @@
       caja.className = 'viabilidad';
       return;
     }
-    const v = window.Sorteo.comprobar(lista, exclusionesAplicables(), { evitarReciprocos: reglas.evitarReciprocos });
+    const v = window.Sorteo.comprobar(lista, aplicables(reglas.exclusiones), {
+      evitarReciprocos: reglas.evitarReciprocos,
+      fijas: aplicables(reglas.fijas),
+    });
     caja.className = 'viabilidad' + (v.posible ? '' : ' mal');
     caja.textContent = v.posible ? 'Con estas reglas el sorteo sale sin problema.' : v.motivo;
   }
@@ -850,18 +872,46 @@
     if (!reglas) return;
     const a = $('#ex-a').value;
     const b = $('#ex-b').value;
-    const error = $('#org-error');
+    const error = $('#ex-error');
     if (!a || !b) { error.textContent = 'Elige a las dos personas.'; return; }
     if (a === b) { error.textContent = 'Tienen que ser dos personas distintas.'; return; }
-    const existe = reglas.exclusiones.some(([x, y]) => {
-      const par = [x.toLowerCase(), y.toLowerCase()];
-      return par.includes(a.toLowerCase()) && par.includes(b.toLowerCase());
-    });
+    const existe = reglas.exclusiones.some(([x, y]) => (igual(x, a) && igual(y, b)) || (igual(x, b) && igual(y, a)));
     if (existe) { error.textContent = 'Esa pareja ya está.'; return; }
-    error.textContent = '';
+    const fija = reglas.fijas.find(([x, y]) => (igual(x, a) && igual(y, b)) || (igual(x, b) && igual(y, a)));
+    if (fija) {
+      error.textContent = `${fija[0]} tiene fijado que le regala a ${fija[1]}. Quita esa asignación primero.`;
+      return;
+    }
+    limpiarErroresReglas();
     reglas.exclusiones.push([a, b]);
     $('#ex-a').value = '';
     $('#ex-b').value = '';
+    renderReglas();
+  });
+
+  $('#form-fija').addEventListener('submit', ev => {
+    ev.preventDefault();
+    if (!reglas) return;
+    const a = $('#fi-a').value;
+    const b = $('#fi-b').value;
+    const error = $('#fi-error');
+    if (!a || !b) { error.textContent = 'Elige quién regala y a quién.'; return; }
+    if (a === b) { error.textContent = 'Nadie puede regalarse a sí mismo.'; return; }
+    const daYa = reglas.fijas.find(([x]) => igual(x, a));
+    if (daYa) {
+      error.textContent = igual(daYa[1], b)
+        ? 'Eso ya está fijado.'
+        : `${daYa[0]} ya tiene fijado que le regala a ${daYa[1]}. Quítalo primero si quieres cambiarlo.`;
+      return;
+    }
+    const recibeYa = reglas.fijas.find(([, y]) => igual(y, b));
+    if (recibeYa) { error.textContent = `A ${recibeYa[1]} ya le regala ${recibeYa[0]}.`; return; }
+    const excluidos = reglas.exclusiones.some(([x, y]) => (igual(x, a) && igual(y, b)) || (igual(x, b) && igual(y, a)));
+    if (excluidos) { error.textContent = `${a} y ${b} están en las exclusiones. Quita esa exclusión primero.`; return; }
+    limpiarErroresReglas();
+    reglas.fijas.push([a, b]);
+    $('#fi-a').value = '';
+    $('#fi-b').value = '';
     renderReglas();
   });
 
@@ -874,7 +924,12 @@
   $('#btn-guardar-reglas').addEventListener('click', ev => conBoton(ev.currentTarget, async () => {
     if (!reglas) return;
     try {
-      await llamar('guardarReglas', { reglas }, claveOrganizador);
+      const r = await llamar('guardarReglas', { reglas }, claveOrganizador);
+      // Un Code.gs antiguo guarda el resto y descarta las asignaciones fijas sin decir nada.
+      if (reglas.fijas.length && !(r.reglas && Array.isArray(r.reglas.fijas))) {
+        $('#org-error').textContent = 'Las exclusiones se han guardado, pero las asignaciones fijas no: el servidor tiene un Code.gs antiguo. Pega el nuevo en Apps Script y publica una versión nueva.';
+        return;
+      }
       $('#dlg-organizador').close();
       avisar('Opciones guardadas.');
     } catch (e) {

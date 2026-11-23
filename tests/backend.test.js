@@ -146,18 +146,36 @@ test('estado informa de cuota y correo de pruebas, y no menciona las reglas', ()
 
 test('reglas vacías por defecto; se guardan limpias y sin duplicados', () => {
   const b = crearBackend();
-  assert.deepEqual(b.post({ clave: CLAVE, accion: 'leerReglas' }).reglas, { exclusiones: [], evitarReciprocos: false });
-  const r = b.ponerReglas({ exclusiones: [['  Ana ', 'Bruno'], ['bruno', 'ana'], ['Carla', 'David']], evitarReciprocos: true });
+  assert.deepEqual(b.post({ clave: CLAVE, accion: 'leerReglas' }).reglas, { exclusiones: [], fijas: [], evitarReciprocos: false });
+  const r = b.ponerReglas({
+    exclusiones: [['  Ana ', 'Bruno'], ['bruno', 'ana'], ['Carla', 'David']],
+    fijas: [[' Íñigo ', 'Carla'], ['íñigo', 'CARLA'], ['Ana', 'David']],
+    evitarReciprocos: true,
+  });
   assert.equal(r.ok, true);
-  assert.deepEqual(r.reglas, { exclusiones: [['Ana', 'Bruno'], ['Carla', 'David']], evitarReciprocos: true });
+  assert.deepEqual(r.reglas, {
+    exclusiones: [['Ana', 'Bruno'], ['Carla', 'David']],
+    fijas: [['Íñigo', 'Carla'], ['Ana', 'David']],
+    evitarReciprocos: true,
+  });
   assert.deepEqual(b.post({ clave: CLAVE, accion: 'leerReglas' }).reglas, r.reglas);
+});
+
+test('las reglas guardadas antes de existir las asignaciones fijas siguen valiendo', () => {
+  const b = crearBackend();
+  b.propiedades.set('REGLAS', JSON.stringify({ exclusiones: [['Ana', 'Bruno']], evitarReciprocos: true }));
+  assert.deepEqual(b.post({ clave: CLAVE, accion: 'leerReglas' }).reglas, { exclusiones: [['Ana', 'Bruno']], fijas: [], evitarReciprocos: true });
+  assert.equal(b.post(sorteoReal()).ok, true);
 });
 
 test('rechaza reglas mal formadas', () => {
   const b = crearBackend();
-  for (const reglas of [null, { exclusiones: 'Ana' }, { exclusiones: [['Ana']] }, { exclusiones: [['Ana', 'ana']] }, { exclusiones: [['', 'Bruno']] }]) {
-    assert.equal(b.ponerReglas(reglas).ok, false, JSON.stringify(reglas));
-  }
+  const malas = [
+    null, { exclusiones: 'Ana' }, { exclusiones: [['Ana']] }, { exclusiones: [['Ana', 'ana']] }, { exclusiones: [['', 'Bruno']] },
+    { fijas: 'Ana' }, { fijas: [['Ana']] }, { fijas: [['Ana', ' ana ']] }, { fijas: [['', 'Bruno']] },
+    { fijas: [['Ana', 'Bruno'], ['ana', 'Carla']] }, { fijas: [['Ana', 'Bruno'], ['Carla', 'bruno']] },
+  ];
+  for (const reglas of malas) assert.equal(b.ponerReglas(reglas).ok, false, JSON.stringify(reglas));
   assert.equal(b.propiedades.has('REGLAS'), false);
 });
 
@@ -256,6 +274,55 @@ test('evitar parejas cruzadas desde las reglas', () => {
   }
 });
 
+test('las asignaciones fijas se cumplen siempre en el sorteo real', () => {
+  for (let i = 0; i < 30; i++) {
+    const b = crearBackend();
+    b.ponerReglas({ exclusiones: [['Ana', 'Bruno']], fijas: [['ana', 'ÍÑIGO'], ['Carla', 'Bruno']], evitarReciprocos: true });
+    assert.equal(b.post(sorteoReal()).ok, true);
+    const reparto = repartoDesdeCorreos(b.correos);
+    comprobarReparto(reparto, NOMBRES);
+    assert.equal(reparto.Ana, 'Íñigo');
+    assert.equal(reparto.Carla, 'Bruno');
+    assert.notEqual(reparto.Bruno, 'Ana');
+    for (const [da, recibe] of Object.entries(reparto)) assert.notEqual(reparto[recibe], da);
+  }
+});
+
+test('las asignaciones fijas que manda la web se ignoran: solo cuentan las del servidor', () => {
+  // Sin reglas en el servidor, a Ana le toca Bruno 1 de cada 4 veces: 40 seguidas no pasaría nunca.
+  const veces = { si: 0, no: 0 };
+  for (let i = 0; i < 40; i++) {
+    const b = crearBackend();
+    b.post(sorteoReal({ fijas: [['Ana', 'Bruno']], reglas: { fijas: [['Ana', 'Bruno']] } }));
+    veces[repartoDesdeCorreos(b.correos).Ana === 'Bruno' ? 'si' : 'no']++;
+  }
+  assert.ok(veces.no > 0);
+});
+
+test('las asignaciones fijas con personas que ya no participan se ignoran', () => {
+  const b = crearBackend();
+  b.ponerReglas({ fijas: [['Ana', 'Zoe'], ['Yago', 'Bruno']] });
+  assert.equal(b.post(sorteoReal()).ok, true);
+  comprobarReparto(repartoDesdeCorreos(b.correos), NOMBRES);
+});
+
+test('si una asignación fija choca con las reglas, el error no da nombres y no se envía nada', () => {
+  const casos = [
+    { exclusiones: [['Bruno', 'Ana']], fijas: [['Ana', 'Bruno']] },
+    { fijas: [['Ana', 'Bruno'], ['Bruno', 'Ana']], evitarReciprocos: true },
+  ];
+  for (const reglas of casos) {
+    const b = crearBackend();
+    assert.equal(b.ponerReglas(reglas).ok, true);
+    const r = b.post(sorteoReal());
+    assert.equal(r.ok, false);
+    assert.equal(r.codigo, 'IMPOSIBLE');
+    for (const nombre of NOMBRES) assert.ok(!r.error.includes(nombre), `el error menciona a ${nombre}`);
+    assert.equal(b.correos.length, 0);
+    assert.equal(b.propiedades.has('ULTIMO_SORTEO'), false);
+  }
+});
+
 test('no repite un sorteo real sin confirmación explícita', () => {
   const b = crearBackend();
   b.post(sorteoReal());
@@ -335,7 +402,7 @@ test('el correo no lleva frases genéricas y el mensaje del organizador va como 
   const mensaje = 'Primera línea\nsegunda línea\n\nOtro párrafo <b>sin</b> HTML';
   const { html } = b.post({ clave: CLAVE, accion: 'vistaPrevia', ajustes: { titulo: 'Cumple de Ana', mensaje } });
   for (const generica of ['Feliz Navidad', 'pierde la gracia', 'Piensa en algo']) assert.ok(!html.includes(generica), `sobra «${generica}»`);
-  const parrafos = [...html.matchAll(/<p style="([^"]*)">([\s\S]*?)<\/p>/g)].map(m => ({ estilo: m[1], texto: m[2] }));
+  const parrafos = [...html.matchAll(/<p[^>]*style="([^"]*)">([\s\S]*?)<\/p>/g)].map(m => ({ estilo: m[1], texto: m[2] }));
   const primero = parrafos.find(p => p.texto.includes('Primera línea'));
   const segundo = parrafos.find(p => p.texto.includes('Otro párrafo'));
   assert.equal(primero.texto, 'Primera línea<br>segunda línea');
@@ -396,6 +463,38 @@ test('el lugar llega en el correo real y en el texto plano, también al reenviar
   b.correos.length = 0;
   b.post({ clave: CLAVE, accion: 'reenviar', nombre: 'Ana' });
   assert.ok(b.correos[0].htmlBody.includes('Casa de Ana'));
+});
+
+test('la fecha va antes que el presupuesto, en el HTML y en el texto plano', () => {
+  const b = crearBackend();
+  b.post(sorteoReal({ ajustes: { titulo: 'Navidad', presupuesto: '20 €', fecha: '24 de diciembre', lugar: { modo: 'pendiente' } } }));
+  const { htmlBody, body } = b.correos[0];
+  assert.ok(htmlBody.indexOf('>Fecha<') < htmlBody.indexOf('>Presupuesto<'));
+  assert.ok(htmlBody.indexOf('>Presupuesto<') < htmlBody.indexOf('>Lugar<'), 'el lugar sigue debajo');
+  assert.ok(body.indexOf('Fecha: 24 de diciembre') < body.indexOf('Presupuesto: 20 €'));
+});
+
+test('el correo trae modo oscuro y todas sus clases tienen color en claro y en oscuro', () => {
+  const b = crearBackend();
+  const { html } = b.post({ clave: CLAVE, accion: 'vistaPrevia', ajustes: {
+    titulo: 'Navidad', presupuesto: '20 €', fecha: '24 de diciembre', mensaje: 'Hola',
+    lugar: { modo: 'direccion', nombre: 'Casa de Ana', direccion: 'c/ Falsa, 1' },
+  } });
+  assert.ok(html.includes('<meta name="color-scheme" content="light dark">'));
+  assert.ok(html.includes('@media (prefers-color-scheme: dark)'));
+  assert.match(html, /Amigo <em [^>]*>Invisible<\/em>/);
+
+  const usadas = new Set([...html.matchAll(/class="([^"]+)"/g)].flatMap(m => m[1].split(' ')));
+  assert.ok(usadas.size > 5);
+  for (const clase of usadas) {
+    assert.match(clase, /^ai-/);
+    assert.ok(html.includes(`    .${clase} {`), `falta el color oscuro de ${clase}`);
+    assert.ok(html.includes(`[data-ogs`) && new RegExp(`\\[data-ogs[bc]\\] \\.${clase} `).test(html), `falta ${clase} para Outlook`);
+  }
+  // Cada elemento con clase lleva también su color claro en línea (Gmail ignora el <style> de modo oscuro).
+  for (const m of html.matchAll(/<[a-z]+ class="[^"]+" style="([^"]*)"/g)) {
+    assert.match(m[1], /(color|background-color|border-color):#[0-9a-f]{6};/);
+  }
 });
 
 test('vista previa del correo sin enviar nada', () => {

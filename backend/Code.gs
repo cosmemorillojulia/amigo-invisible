@@ -1,12 +1,13 @@
 /**
- * Amigo invisible — servidor (Google Apps Script)
+ * Amigo Invisible — servidor (Google Apps Script)
  *
  * Hace el sorteo y manda un correo a cada participante desde la cuenta de Google
  * que publica este script. La web nunca recibe el resultado, solo la lista de
  * personas a las que se ha enviado el correo.
  *
- * Las exclusiones se guardan aquí (propiedad REGLAS) y solo se pueden ver o
- * cambiar con la clave, desde «Opciones del organizador».
+ * Las reglas del organizador (exclusiones, asignaciones fijas y evitar parejas
+ * cruzadas) se guardan aquí (propiedad REGLAS) y solo se pueden ver o cambiar
+ * con la clave, desde «Opciones del organizador».
  *
  * Instalación: README.md → «1. Servidor en Google Apps Script».
  *
@@ -21,7 +22,7 @@ const MAX_EXCLUSIONES = 200;
 const MAX_FALLOS_CLAVE = 8;
 const SEGUNDOS_BLOQUEO = 15 * 60;
 const MAX_BYTES_PROPIEDAD = 9000;
-const NOMBRE_REMITENTE = 'Amigo invisible';
+const NOMBRE_REMITENTE = 'Amigo Invisible';
 const EMAIL_VALIDO = /^[^\s@,;<>()]+@[^\s@,;<>()]+\.[^\s@,;<>()]{2,}$/;
 
 // ───────────────────────────── Entrada HTTP ─────────────────────────────
@@ -128,7 +129,7 @@ function accionLeerReglas_() {
 function accionGuardarReglas_(peticion) {
   const reglas = validarReglas_(peticion.reglas);
   const texto = JSON.stringify(reglas);
-  if (bytes_(texto) > MAX_BYTES_PROPIEDAD) throw error_('Hay demasiadas exclusiones para guardarlas.', 'TAMANO');
+  if (bytes_(texto) > MAX_BYTES_PROPIEDAD) throw error_('Hay demasiadas reglas para guardarlas.', 'TAMANO');
   PropertiesService.getScriptProperties().setProperty('REGLAS', texto);
   return { reglas: reglas };
 }
@@ -159,10 +160,11 @@ function accionSortear_(peticion) {
     }
 
     const nombres = participantes.map(p => p.nombre);
-    const exclusiones = exclusionesAplicables_(reglas.exclusiones, nombres);
+    const exclusiones = parejasAplicables_(reglas.exclusiones, nombres);
+    const fijas = parejasAplicables_(reglas.fijas, nombres);
     let destino;
     try {
-      destino = resolverSorteo_(nombres, exclusiones, reglas.evitarReciprocos);
+      destino = resolverSorteo_(nombres, exclusiones, reglas.evitarReciprocos, fijas);
     } catch (err) {
       // Mensaje genérico: el sorteo puede hacerse delante de otros y las reglas son privadas.
       if (err.codigo === 'IMPOSIBLE') {
@@ -287,14 +289,41 @@ function validarReglas_(reglas) {
     vistas[clave] = true;
     exclusiones.push([a, b]);
   });
-  return { exclusiones: exclusiones, evitarReciprocos: reglas.evitarReciprocos === true };
+  return { exclusiones: exclusiones, fijas: validarFijas_(reglas.fijas), evitarReciprocos: reglas.evitarReciprocos === true };
 }
 
-/** Se queda con las exclusiones cuyas dos personas participan (con el nombre tal y como viene en la lista). */
-function exclusionesAplicables_(exclusiones, nombres) {
+/** Asignaciones fijas: [[quien, aQuien], ...]. Cada persona da y recibe como mucho una. */
+function validarFijas_(valor) {
+  const lista = valor == null ? [] : valor;
+  if (!Array.isArray(lista)) throw error_('Las asignaciones fijas no son válidas.', 'DATOS');
+  if (lista.length > MAX_PARTICIPANTES) throw error_(`Como máximo se pueden poner ${MAX_PARTICIPANTES} asignaciones fijas.`, 'DATOS');
+
+  const da = Object.create(null);
+  const recibe = Object.create(null);
+  const fijas = [];
+  lista.forEach(par => {
+    if (!Array.isArray(par) || par.length !== 2) throw error_('Hay una asignación fija mal formada.', 'DATOS');
+    const a = limpiarNombre_(par[0]);
+    const b = limpiarNombre_(par[1]);
+    if (!a || !b || a.length > 40 || b.length > 40) throw error_('Hay una asignación fija con un nombre vacío o demasiado largo.', 'DATOS');
+    const ka = a.toLowerCase();
+    const kb = b.toLowerCase();
+    if (ka === kb) throw error_('Nadie puede regalarse a sí mismo.', 'DATOS');
+    if (da[ka] === kb) return;
+    if (da[ka]) throw error_(`${a} tiene más de una asignación fija.`, 'DATOS');
+    if (recibe[kb]) throw error_(`A ${b} le regalan dos personas en las asignaciones fijas.`, 'DATOS');
+    da[ka] = kb;
+    recibe[kb] = ka;
+    fijas.push([a, b]);
+  });
+  return fijas;
+}
+
+/** Se queda con las parejas cuyas dos personas participan (con el nombre tal y como viene en la lista). */
+function parejasAplicables_(parejas, nombres) {
   const porNombre = Object.create(null);
   nombres.forEach(n => { porNombre[n.toLowerCase()] = n; });
-  return exclusiones
+  return (parejas || [])
     .map(par => [porNombre[par[0].toLowerCase()], porNombre[par[1].toLowerCase()]])
     .filter(par => par[0] && par[1]);
 }
@@ -303,11 +332,11 @@ function exclusionesAplicables_(exclusiones, nombres) {
 
 function leerReglas_() {
   const texto = PropertiesService.getScriptProperties().getProperty('REGLAS');
-  if (!texto) return { exclusiones: [], evitarReciprocos: false };
+  if (!texto) return { exclusiones: [], fijas: [], evitarReciprocos: false };
   try {
     return validarReglas_(JSON.parse(texto));
   } catch (err) {
-    return { exclusiones: [], evitarReciprocos: false };
+    return { exclusiones: [], fijas: [], evitarReciprocos: false };
   }
 }
 
@@ -339,7 +368,7 @@ function emailPrueba_() {
 // ─────────────────────────────── Sorteo ─────────────────────────────────
 // Copia del algoritmo de js/sorteo.js (los tests comprueban que ambos cumplen las reglas).
 
-function resolverSorteo_(nombres, exclusiones, evitarReciprocos) {
+function resolverSorteo_(nombres, exclusiones, evitarReciprocos, fijas) {
   const n = nombres.length;
   if (evitarReciprocos && n < 3) {
     throw error_('Para evitar parejas cruzadas hacen falta al menos tres personas.', 'IMPOSIBLE');
@@ -358,15 +387,42 @@ function resolverSorteo_(nombres, exclusiones, evitarReciprocos) {
     permitido[a][b] = false;
     permitido[b][a] = false;
   });
+
+  // Asignaciones fijas: fijo[a] = b → a le regala a b sí o sí.
+  const fijo = new Array(n).fill(-1);
+  const recibeDe = new Array(n).fill(-1);
+  (fijas || []).forEach(par => {
+    const a = indice[par[0].toLowerCase()];
+    const b = indice[par[1].toLowerCase()];
+    if (a === b || (fijo[a] !== -1 && fijo[a] !== b) || (recibeDe[b] !== -1 && recibeDe[b] !== a) || !permitido[a][b]) {
+      throw error_('Las asignaciones fijas chocan entre sí o con las exclusiones.', 'IMPOSIBLE');
+    }
+    fijo[a] = b;
+    recibeDe[b] = a;
+  });
+  for (let a = 0; a < n; a++) {
+    const b = fijo[a];
+    if (b === -1) continue;
+    if (evitarReciprocos && fijo[b] === a) throw error_('Hay dos personas fijadas la una a la otra.', 'IMPOSIBLE');
+    for (let j = 0; j < n; j++) permitido[a][j] = j === b;
+    for (let i = 0; i < n; i++) if (i !== a) permitido[i][b] = false;
+  }
+
   for (let i = 0; i < n; i++) {
     if (!permitido[i].some(Boolean)) throw error_(`${nombres[i]} no puede regalar a nadie.`, 'IMPOSIBLE');
+    if (!permitido.some(fila => fila[i])) throw error_(`A ${nombres[i]} no le puede regalar nadie.`, 'IMPOSIBLE');
   }
 
   const esValida = destino => destino.every((j, i) => permitido[i][j] && !(evitarReciprocos && destino[j] === i));
 
   // Muestreo por rechazo: cada reparto válido tiene la misma probabilidad.
+  // Las asignaciones fijas se dejan puestas y solo se baraja al resto.
+  const libres = rango_(n).filter(i => fijo[i] === -1);
+  const destinosLibres = rango_(n).filter(j => recibeDe[j] === -1);
   for (let intento = 0; intento < 20000; intento++) {
-    const destino = barajar_(rango_(n));
+    const destino = fijo.slice();
+    const barajados = barajar_(destinosLibres);
+    libres.forEach((i, k) => { destino[i] = barajados[k]; });
     if (esValida(destino)) return destino;
   }
 
@@ -378,7 +434,7 @@ function resolverSorteo_(nombres, exclusiones, evitarReciprocos) {
   let pasos = 0;
   const paso = k => {
     if (k === n) return true;
-    if (++pasos > 200000) throw error_('Hay demasiadas exclusiones para encontrar un reparto.', 'IMPOSIBLE');
+    if (++pasos > 200000) throw error_('Hay demasiadas reglas para encontrar un reparto.', 'IMPOSIBLE');
     const i = orden[k];
     for (const j of barajar_(rango_(n))) {
       if (usado[j] || !permitido[i][j] || (evitarReciprocos && destino[j] === i)) continue;
@@ -388,7 +444,7 @@ function resolverSorteo_(nombres, exclusiones, evitarReciprocos) {
     }
     return false;
   };
-  if (!paso(0)) throw error_('Con estas exclusiones no hay ningún reparto posible.', 'IMPOSIBLE');
+  if (!paso(0)) throw error_('Con estas reglas no hay ningún reparto posible.', 'IMPOSIBLE');
   return destino;
 }
 
@@ -446,8 +502,8 @@ function textoCorreo_(d) {
   lineas.push(`¡Hola, ${d.nombre}!`, '');
   lineas.push(`Ya está hecho el sorteo y te ha tocado regalar a ${d.asignado}.`);
   const detalles = [];
-  if (a.presupuesto) detalles.push(`Presupuesto: ${a.presupuesto}`);
   if (a.fecha) detalles.push(`Fecha: ${a.fecha}`);
+  if (a.presupuesto) detalles.push(`Presupuesto: ${a.presupuesto}`);
   const lugar = a.lugar || {};
   if (lugar.modo === 'pendiente') detalles.push('Lugar: por definir');
   if (lugar.modo === 'direccion') {
@@ -459,76 +515,115 @@ function textoCorreo_(d) {
   return lineas.join('\n');
 }
 
+/**
+ * Colores del correo: cada papel tiene su color en claro y en modo oscuro.
+ *
+ * En claro todo el texto va oscuro sobre fondo claro. Gmail no deja elegir los
+ * colores del modo oscuro (los invierte él solo en el móvil), y con esta base la
+ * inversión sale limpia y todo se sigue leyendo.
+ *
+ * Apple Mail, Mail del iPhone y Outlook sí respetan un modo oscuro propio: ahí
+ * se usan los colores de la app (verde muy oscuro, crema y dorado).
+ */
+const COLORES_CORREO = {
+  //          propiedad           claro      oscuro
+  fondo:    ['background-color', '#e8e9e2', '#0d1915'],
+  cabecera: ['background-color', '#dfe6dc', '#1a3029'],
+  papel:    ['background-color', '#fbf7ef', '#13241e'],
+  caja:     ['background-color', '#f3ecdf', '#1a2f28'],
+  raya:     ['background-color', '#b08d52', '#c4a46a'],
+  tinta:    ['color', '#2a2520', '#ebe3d3'],
+  suave:    ['color', '#6b6257', '#a9a08f'],
+  titulo:   ['color', '#1f3a2f', '#efe7d8'],
+  nombre:   ['color', '#1f3a2f', '#e0c690'],
+  oro:      ['color', '#94733d', '#c4a46a'],
+  borde:    ['border-color', '#e3d8c4', '#2c4139'],
+  aviso:    ['border-color', '#b08d52', '#c4a46a'],
+};
+
+/** class + style en línea (en claro) para uno o varios papeles: atributos(['papel'], 'padding:0;') */
+function atributosCorreo_(papeles, extra) {
+  const enLinea = papeles.map(p => `${COLORES_CORREO[p][0]}:${COLORES_CORREO[p][1]};`).join('');
+  return `class="${papeles.map(p => 'ai-' + p).join(' ')}" style="${extra || ''}${enLinea}"`;
+}
+
+function cssModoOscuro_() {
+  const reglas = prefijo => Object.keys(COLORES_CORREO)
+    .map(p => {
+      const [propiedad, , oscuro] = COLORES_CORREO[p];
+      const pre = prefijo === 'outlook' ? (propiedad === 'background-color' ? '[data-ogsb] ' : '[data-ogsc] ') : '';
+      return `    ${pre}.ai-${p} { ${propiedad}: ${oscuro} !important; }`;
+    })
+    .join('\n');
+  // Dos bloques aparte: si algún programa no entiende uno, lo descarta sin tocar el resto.
+  return `<style>
+    :root { color-scheme: light dark; supported-color-schemes: light dark; }
+    @media (prefers-color-scheme: dark) {
+${reglas('')}
+    }
+  </style>
+  <style>
+${reglas('outlook')}
+  </style>`;
+}
+
 function htmlCorreo_(d) {
   const e = escaparHtml_;
   const a = d.ajustes;
-  // Los mismos colores que la app: verde muy oscuro, crema y dorado.
-  const c = {
-    fondo: '#ebe3d4',
-    cabecera: '#13241e',
-    papel: '#fbf7ef',
-    caja: '#f3ecdf',
-    tinta: '#2a2520',
-    suave: '#6b6257',
-    linea: '#e3d8c4',
-    verde: '#1f3a2f',
-    oro: '#b08d52',
-    oroClaro: '#d6bb86',
-    crema: '#efe7d8',
-  };
+  const at = atributosCorreo_;
   const serif = "Georgia, 'Times New Roman', serif";
   const sans = "'Helvetica Neue', Helvetica, Arial, sans-serif";
-  const parrafo = `margin:0 0 18px;font-family:${serif};font-size:17px;line-height:1.65;color:${c.tinta};`;
+  const parrafo = `margin:0 0 18px;font-family:${serif};font-size:17px;line-height:1.65;`;
 
   const aviso = d.prueba
-    ? `<tr><td style="padding:0 0 16px;">
+    ? `<tr><td style="padding:0 0 14px;">
          <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0"><tr>
-           <td style="padding:12px 16px;border:1px dashed ${c.oro};border-radius:8px;font-family:${sans};font-size:13px;line-height:1.5;color:${c.suave};">
-             Esto es una prueba. En el sorteo de verdad, este correo le llegaría a <strong style="color:${c.tinta};">${e(d.nombre)}</strong> (${e(d.emailReal)}).
+           <td ${at(['suave', 'aviso'], `padding:12px 16px;border:1px dashed;border-radius:8px;font-family:${sans};font-size:13px;line-height:1.5;`)}>
+             Esto es una prueba. En el sorteo de verdad, este correo le llegaría a <strong ${at(['tinta'])}>${e(d.nombre)}</strong> (${e(d.emailReal)}).
            </td>
          </tr></table>
        </td></tr>`
     : '';
 
-  // Caja de datos: presupuesto y fecha en dos columnas; debajo, el lugar a todo el ancho.
-  const etiqueta = texto => `<div style="font-family:${sans};font-size:11px;letter-spacing:2px;text-transform:uppercase;color:${c.oro};padding-bottom:6px;">${texto}</div>`;
-  const valor = (texto, color) => `<div style="font-family:${serif};font-size:17px;line-height:1.4;color:${color || c.tinta};">${texto}</div>`;
+  // Caja de datos: fecha y presupuesto en dos columnas; debajo, el lugar a todo el ancho.
+  const etiqueta = texto => `<div ${at(['oro'], `font-family:${sans};font-size:11px;letter-spacing:2px;text-transform:uppercase;padding-bottom:6px;`)}>${texto}</div>`;
+  const valor = (texto, papel) => `<div ${at([papel || 'tinta'], `font-family:${serif};font-size:17px;line-height:1.4;`)}>${texto}</div>`;
 
   const datos = [];
-  if (a.presupuesto) datos.push(['Presupuesto', a.presupuesto]);
   if (a.fecha) datos.push(['Fecha', a.fecha]);
+  if (a.presupuesto) datos.push(['Presupuesto', a.presupuesto]);
 
   const lugar = a.lugar || {};
   let contenidoLugar = '';
-  if (lugar.modo === 'pendiente') contenidoLugar = valor('Por definir', c.suave);
+  if (lugar.modo === 'pendiente') contenidoLugar = valor('Por definir', 'suave');
   if (lugar.modo === 'direccion') {
     if (lugar.nombre) contenidoLugar += valor(e(lugar.nombre));
     if (lugar.direccion) {
       contenidoLugar += `<div style="margin-top:${lugar.nombre ? 4 : 0}px;font-family:${serif};font-size:${lugar.nombre ? 15 : 17}px;line-height:1.4;">`
-        + `<a href="${e(enlaceMapa_(lugar.direccion))}" target="_blank" style="color:${c.verde};text-decoration:underline;">${e(lugar.direccion)}</a></div>`;
+        + `<a href="${e(enlaceMapa_(lugar.direccion))}" target="_blank" ${at(['nombre'], 'text-decoration:underline;')}>${e(lugar.direccion)}</a></div>`;
     }
   }
 
   const filas = [];
   if (datos.length) {
     filas.push(`<tr>${datos.map(([titulo, texto], i) => `
-         <td valign="top" width="${Math.floor(100 / datos.length)}%" style="padding:16px 10px;text-align:center;${i ? `border-left:1px solid ${c.linea};` : ''}">
+         <td valign="top" width="${Math.floor(100 / datos.length)}%" ${i ? at(['borde'], 'padding:16px 8px;text-align:center;border-left:1px solid;') : 'style="padding:16px 8px;text-align:center;"'}>
            ${etiqueta(titulo)}${valor(e(texto))}
          </td>`).join('')}</tr>`);
   }
   if (contenidoLugar) {
-    filas.push(`<tr><td colspan="${Math.max(1, datos.length)}" style="padding:16px 14px;text-align:center;${datos.length ? `border-top:1px solid ${c.linea};` : ''}">
+    filas.push(`<tr><td colspan="${Math.max(1, datos.length)}" ${datos.length ? at(['borde'], 'padding:16px 12px;text-align:center;border-top:1px solid;') : 'style="padding:16px 12px;text-align:center;"'}>
            ${etiqueta('Lugar')}${contenidoLugar}
          </td></tr>`);
   }
   const bloqueDatos = filas.length
-    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:0 0 ${a.mensaje ? 28 : 0}px;background-color:${c.caja};border-radius:10px;">${filas.join('')}</table>`
+    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" ${at(['caja'], `margin:0 0 ${a.mensaje ? 28 : 0}px;border-radius:10px;`)}>${filas.join('')}</table>`
     : '';
 
   // El mensaje del organizador va tal cual, como texto normal: una línea en blanco empieza un párrafo nuevo.
   const parrafosMensaje = a.mensaje.split(/\n\s*\n/).map(t => t.trim()).filter(Boolean);
   const bloqueMensaje = parrafosMensaje
-    .map((t, i) => `<p style="${parrafo}${i === parrafosMensaje.length - 1 ? 'margin-bottom:0;' : ''}">${e(t).replace(/\n/g, '<br>')}</p>`)
+    .map((t, i) => `<p ${at(['tinta'], parrafo + (i === parrafosMensaje.length - 1 ? 'margin-bottom:0;' : ''))}>${e(t).replace(/\n/g, '<br>')}</p>`)
     .join('\n          ');
 
   return `<!DOCTYPE html>
@@ -536,32 +631,35 @@ function htmlCorreo_(d) {
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="color-scheme" content="light dark">
+  <meta name="supported-color-schemes" content="light dark">
   <title>${e(asunto_(a))}</title>
+  ${cssModoOscuro_()}
 </head>
-<body style="margin:0;padding:0;background-color:${c.fondo};">
+<body ${at(['fondo'], 'margin:0;padding:0;')}>
   <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">Ya está hecho el sorteo. Mira a quién te ha tocado.</div>
-  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="background-color:${c.fondo};">
-    <tr><td align="center" style="padding:32px 14px 40px;">
+  <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" ${at(['fondo'])}>
+    <tr><td align="center" style="padding:28px 12px 36px;">
       <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:520px;">
         ${aviso}
-        <tr><td style="background-color:${c.cabecera};border-radius:12px 12px 0 0;padding:34px 28px 30px;text-align:center;">
-          <div style="font-family:${sans};font-size:11px;letter-spacing:3px;text-transform:uppercase;color:${c.oroClaro};">${e(a.titulo)}</div>
-          <div style="margin-top:12px;font-family:${serif};font-size:32px;line-height:1.1;color:${c.crema};">Amigo <em style="color:${c.oroClaro};">invisible</em></div>
+        <tr><td ${at(['cabecera'], 'border-radius:12px 12px 0 0;padding:30px 24px 26px;text-align:center;')}>
+          <div ${at(['oro'], `font-family:${sans};font-size:11px;letter-spacing:3px;text-transform:uppercase;`)}>${e(a.titulo)}</div>
+          <div ${at(['titulo'], `margin-top:10px;font-family:${serif};font-size:32px;line-height:1.1;`)}>Amigo <em ${at(['oro'])}>Invisible</em></div>
         </td></tr>
-        <tr><td style="background-color:${c.papel};border-radius:0 0 12px 12px;padding:38px 30px 36px;">
-          <p style="${parrafo}">¡Hola, ${e(d.nombre)}!</p>
-          <p style="${parrafo}margin-bottom:0;">Ya está hecho el sorteo y este año te toca regalar a…</p>
+        <tr><td ${at(['papel'], 'border-radius:0 0 12px 12px;padding:34px 24px 32px;')}>
+          <p ${at(['tinta'], parrafo)}>¡Hola, ${e(d.nombre)}!</p>
+          <p ${at(['tinta'], parrafo + 'margin-bottom:0;')}>Ya está hecho el sorteo y este año te toca regalar a…</p>
           <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="margin:26px 0 ${filas.length || parrafosMensaje.length ? 30 : 0}px;"><tr>
-            <td style="padding:6px 8px 0;text-align:center;">
+            <td style="padding:6px 4px 0;text-align:center;">
               <div style="font-size:34px;line-height:1;">${EMOJI_CORREO}</div>
-              <div style="margin-top:14px;font-family:${serif};font-style:italic;font-size:44px;line-height:1.15;color:${c.verde};word-break:break-word;">${e(d.asignado)}</div>
-              <div style="width:48px;height:1px;margin:20px auto 0;background-color:${c.oro};font-size:0;line-height:1px;">&nbsp;</div>
+              <div ${at(['nombre'], `margin-top:14px;font-family:${serif};font-style:italic;font-size:42px;line-height:1.15;word-break:break-word;`)}>${e(d.asignado)}</div>
+              <div ${at(['raya'], 'width:48px;height:1px;margin:20px auto 0;font-size:0;line-height:1px;')}>&nbsp;</div>
             </td>
           </tr></table>
           ${bloqueDatos}
           ${bloqueMensaje}
         </td></tr>
-        <tr><td style="padding:20px 0 0;text-align:center;font-family:${serif};font-size:15px;color:${c.oro};">&#10022;</td></tr>
+        <tr><td ${at(['oro'], `padding:20px 0 0;text-align:center;font-family:${serif};font-size:15px;`)}>&#10022;</td></tr>
       </table>
     </td></tr>
   </table>

@@ -86,3 +86,60 @@ test('todos los repartos posibles salen con frecuencia parecida', () => {
   assert.equal(conteo.size, 9);
   for (const veces of conteo.values()) assert.ok(veces > 700 && veces < 1300, `frecuencia sesgada: ${veces}`);
 });
+
+// ───────────────────────── Asignaciones fijas ─────────────────────────
+
+test('las asignaciones fijas salen siempre, también junto a exclusiones y sin cruces', () => {
+  const ex = [['Ana', 'Bruno'], ['Carla', 'David']];
+  const fijas = [['Ana', 'Hugo'], [' carla ', 'ELENA']];
+  for (let i = 0; i < 300; i++) {
+    const reparto = Sorteo.sortear(NOMBRES, ex, { fijas, evitarReciprocos: true });
+    comprobarReparto(reparto, NOMBRES, ex, true);
+    assert.equal(reparto.Ana, 'Hugo');
+    assert.equal(reparto.Carla, 'Elena');
+  }
+});
+
+test('con asignaciones fijas el resto sigue saliendo con frecuencia parecida', () => {
+  // 5 personas: 44 desarreglos, y en 11 de ellos A le regala a B
+  const nombres = ['A', 'B', 'C', 'D', 'E'];
+  const conteo = new Map();
+  for (let i = 0; i < 11000; i++) {
+    const reparto = Sorteo.sortear(nombres, [], { fijas: [['A', 'B']] });
+    assert.equal(reparto.A, 'B');
+    const clave = nombres.map(n => reparto[n]).join('');
+    conteo.set(clave, (conteo.get(clave) || 0) + 1);
+  }
+  assert.equal(conteo.size, 11);
+  for (const veces of conteo.values()) assert.ok(veces > 750 && veces < 1250, `frecuencia sesgada: ${veces}`);
+});
+
+test('si todo está fijado, sale justo eso', () => {
+  const fijas = [['Ana', 'Bruno'], ['Bruno', 'Carla'], ['Carla', 'Ana']];
+  assert.deepEqual(Sorteo.sortear(['Ana', 'Bruno', 'Carla'], [], { fijas }), { Ana: 'Bruno', Bruno: 'Carla', Carla: 'Ana' });
+});
+
+test('detecta asignaciones fijas que no pueden cumplirse', () => {
+  const nombres = ['Ana', 'Bruno', 'Carla', 'David'];
+  const motivo = (ex, opciones) => Sorteo.comprobar(nombres, ex, opciones);
+
+  assert.equal(motivo([], { fijas: [['Ana', 'Ana']] }).codigo, 'FIJA');
+  assert.equal(motivo([], { fijas: [['Ana', 'Zoe']] }).codigo, 'FIJA');
+  assert.equal(motivo([], { fijas: [['Ana', 'Bruno'], ['Ana', 'Carla']] }).codigo, 'FIJA');
+  assert.equal(motivo([], { fijas: [['Ana', 'Bruno'], ['Carla', 'Bruno']] }).codigo, 'FIJA');
+  assert.equal(motivo([], { fijas: [['Ana', 'Bruno'], ['ana', 'BRUNO']] }).posible, true, 'repetida no es conflicto');
+
+  const conExclusion = motivo([['Bruno', 'Ana']], { fijas: [['Ana', 'Bruno']] });
+  assert.equal(conExclusion.codigo, 'IMPOSIBLE');
+  assert.match(conExclusion.motivo, /exclusiones/);
+
+  const cruzada = motivo([], { fijas: [['Ana', 'Bruno'], ['Bruno', 'Ana']], evitarReciprocos: true });
+  assert.equal(cruzada.posible, false);
+  assert.match(cruzada.motivo, /Ana le regala a Bruno y Bruno a Ana/);
+  assert.equal(motivo([], { fijas: [['Ana', 'Bruno'], ['Bruno', 'Ana']] }).posible, true, 'sin evitar cruces sí vale');
+
+  // Con 3 personas, si Ana y Bruno se regalan entre sí, a Carla solo le quedaría regalarse a sí misma
+  const sobra = Sorteo.comprobar(['Ana', 'Bruno', 'Carla'], [], { fijas: [['Ana', 'Bruno'], ['Bruno', 'Ana']] });
+  assert.equal(sobra.posible, false);
+  assert.match(sobra.motivo, /Carla/);
+});

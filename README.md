@@ -1,4 +1,4 @@
-# Amigo invisible
+# Amigo Invisible
 
 App web para hacer el sorteo del amigo invisible **desde el móvil**: a cada participante le llega un correo con la persona a la que tiene que regalar. Nadie, ni siquiera quien organiza, ve el resultado completo.
 
@@ -18,7 +18,10 @@ Móvil ──(lista + clave)──▶ Apps Script ──▶ sorteo (+ reglas pri
 - **Reenvío** del correo a quien no le haya llegado, con la misma persona y, si hace falta, a otra dirección.
 - **Lista en la nube**: prepárala en el ordenador y haz el sorteo desde el móvil.
 - **Vista previa** del correo y opción de instalar la app en la pantalla de inicio.
-- **Opciones del organizador** (privadas): exclusiones y la opción de evitar parejas cruzadas.
+- **Opciones del organizador** (privadas):
+  - Exclusiones: parejas que no se pueden tocar entre sí.
+  - Asignaciones fijas: que a alguien le toque sí o sí una persona concreta. Al resto se le sortea como siempre.
+  - Evitar parejas cruzadas (que A le regale a B y B a A).
   - Se guardan en el servidor, no en el móvil.
   - Para verlas hay que escribir la clave cada vez.
   - No aparecen en ninguna otra parte de la app ni en los correos.
@@ -75,7 +78,7 @@ La URL no es secreta: sin la `CLAVE` el servidor no hace nada, y tras 8 intentos
    - Escribe la clave y pulsa *Comprobar conexión*.
    - Rellena título, presupuesto, fecha y, si quieres, un mensaje para todos.
 2. **Participantes**: añade a la gente (o pega la lista).
-3. **Ajustes → Opciones del organizador**: pon las exclusiones que quieras. Nadie más las ve.
+3. **Ajustes → Opciones del organizador**: pon las exclusiones y asignaciones fijas que quieras. Nadie más las ve.
 4. **Sorteo**:
    - Primero en **Prueba**: te llegan todos los correos a ti.
    - Después cambia a **Real** y pulsa *Sortear*.
@@ -86,8 +89,13 @@ Si a alguien no le llega el correo, usa *Reenviar un correo* en la pantalla del 
 
 El diseño y los textos del correo están en [`backend/Code.gs`](backend/Code.gs), en la sección **Correos**:
 - `EMOJI_CORREO`: el emoji que sale encima del nombre.
+- `COLORES_CORREO`: los colores, cada uno con su versión en claro y en modo oscuro.
 - `htmlCorreo_`: el diseño.
 - `textoCorreo_`: la versión en texto plano.
+
+Sobre el modo oscuro:
+- Mail del iPhone, Apple Mail y Outlook usan los colores oscuros de `COLORES_CORREO`.
+- Gmail no deja elegirlos: en el móvil invierte los colores por su cuenta. Por eso en claro todo el texto va oscuro sobre fondo claro, para que la inversión salga bien.
 
 Para ver los cambios al momento, sin enviar nada:
 
@@ -98,6 +106,7 @@ node herramientas/vista-correo.js
 Se abre el navegador con el correo en tamaño móvil y ordenador.
 - Cada vez que guardas `Code.gs`, la página se recarga sola.
 - Arriba puedes cambiar el nombre, el presupuesto, la fecha o el mensaje.
+- En *Modo* puedes verlo en claro, en oscuro y en una aproximación del oscuro de Gmail.
 - Puedes ver también la versión de prueba y el texto plano.
 - Para pararla, pulsa `Ctrl + C`.
 

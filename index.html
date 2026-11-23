@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>Amigo invisible</title>
+  <title>Amigo Invisible</title>
   <meta name="description" content="Sorteo del amigo invisible: a cada persona le llega un correo con la persona a la que tiene que regalar.">
   <meta name="theme-color" content="#0d1915">
   <link rel="manifest" href="manifest.webmanifest">
@@ -12,7 +12,7 @@
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-  <meta name="apple-mobile-web-app-title" content="Amigo invisible">
+  <meta name="apple-mobile-web-app-title" content="Amigo Invisible">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Fraunces:ital,opsz,wght@0,9..144,300..600;1,9..144,300..600&family=Figtree:wght@400;500;600&display=swap" rel="stylesheet">
@@ -38,8 +38,7 @@
   <canvas id="nieve" aria-hidden="true"></canvas>
 
   <header class="cabecera">
-    <svg class="icono ornamento" aria-hidden="true"><use href="#i-estrella"/></svg>
-    <h1 class="titulo">Amigo <em>invisible</em></h1>
+    <h1 class="titulo">Amigo <em>Invisible</em></h1>
   </header>
 
   <main>
@@ -292,7 +291,18 @@
           <select id="ex-b" aria-label="Segunda persona"></select>
           <button class="boton boton-secundario" type="submit">Añadir exclusión</button>
         </form>
+        <p class="error-dialogo" id="ex-error" role="alert"></p>
         <ul class="lista lista-exclusiones" id="lista-exclusiones" aria-label="Exclusiones"></ul>
+
+        <p class="etiqueta">Asignaciones fijas</p>
+        <p class="nota">Para que a alguien le toque sí o sí una persona concreta. Al resto se le sortea como siempre.</p>
+        <form id="form-fija" class="form-exclusion" novalidate>
+          <select id="fi-a" aria-label="Quién regala"></select>
+          <select id="fi-b" aria-label="A quién le regala"></select>
+          <button class="boton boton-secundario" type="submit">Fijar</button>
+        </form>
+        <p class="error-dialogo" id="fi-error" role="alert"></p>
+        <ul class="lista lista-exclusiones" id="lista-fijas" aria-label="Asignaciones fijas"></ul>
 
         <label class="interruptor">
           <input type="checkbox" id="org-reciprocos">

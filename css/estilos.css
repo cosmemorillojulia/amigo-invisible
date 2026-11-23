@@ -1,4 +1,4 @@
-/* ───────────────────────── Amigo invisible · estilos ───────────────────────── */
+/* ───────────────────────── Amigo Invisible · estilos ───────────────────────── */
 
 :root {
   --fondo: #0d1915;
@@ -76,15 +76,7 @@ body::before {
   z-index: 1;
   max-width: 520px;
   margin: 0 auto;
-  padding: calc(48px + env(safe-area-inset-top)) 24px 4px;
-}
-
-.ornamento {
-  display: block;
-  width: 14px;
-  height: 14px;
-  margin: 0 0 16px 2px;
-  color: var(--oro);
+  padding: calc(56px + env(safe-area-inset-top)) 24px 4px;
 }
 
 .titulo {
@@ -276,6 +268,7 @@ select option { background: var(--fondo-2); color: var(--texto); }
   margin-bottom: 8px;
 }
 .form-exclusion .boton { grid-column: 1 / -1; }
+.form-exclusion + .error-dialogo { margin: 4px 0 8px; }
 
 /* ───────────────────────── Botones ───────────────────────── */
 
