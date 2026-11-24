@@ -84,11 +84,13 @@ body::before {
 .saludo {
   margin: 0;
   font-family: var(--serif);
-  font-weight: 350;
+  /* Más peso y un tamaño óptico menor que el del título de la app: con trazos tan finos,
+     en el móvil el palo de la H de «Hola» desaparecía. */
+  font-weight: 420;
   font-size: clamp(2.3rem, 11vw, 2.9rem);
   line-height: 1.05;
   letter-spacing: -.02em;
-  font-variation-settings: 'opsz' 144;
+  font-variation-settings: 'opsz' 48;
 }
 
 .intro { margin: 10px 0 0; font-size: 1.05rem; color: var(--texto-2); }

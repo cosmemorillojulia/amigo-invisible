@@ -7,7 +7,7 @@
   const LS_CLAVE = 'amigoInvisible.clave.v1';
   const EMAIL_RE = /^[^\s@,;<>()]+@[^\s@,;<>()]+\.[^\s@,;<>()]{2,}$/;
   const SVG_NS = 'http://www.w3.org/2000/svg';
-  const VISTAS = ['participantes', 'sorteo', 'ajustes'];
+  const VISTAS = ['participantes', 'ajustes', 'sorteo'];
   const SIN_URL = 'Falta la dirección del servidor en js/config.js.';
 
   const $ = (selector, raiz) => (raiz || document).querySelector(selector);
