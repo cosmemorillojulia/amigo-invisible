@@ -219,8 +219,8 @@ body::before {
   inset: 0;
   width: 100%;
   height: 100%;
-  /* Con ratón, se rasca con una moneda */
-  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='34' height='34' viewBox='0 0 34 34'%3E%3Ccircle cx='17' cy='17' r='14.5' fill='%23d9bf86' stroke='%238a6a34' stroke-width='1.5'/%3E%3Ccircle cx='17' cy='17' r='10.5' fill='none' stroke='%23a5844a' stroke-width='1' stroke-dasharray='1.6 1.6'/%3E%3Ctext x='17' y='21.4' text-anchor='middle' font-family='Georgia,serif' font-size='12' font-weight='bold' fill='%238a6a34'%3E1%3C/text%3E%3C/svg%3E") 17 17, grab;
+  /* Con ratón, se rasca con una moneda de 5 céntimos, como toda la vida */
+  cursor: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='38' height='38' viewBox='0 0 38 38'%3E%3Cdefs%3E%3CradialGradient id='c' cx='36%25' cy='30%25' r='78%25'%3E%3Cstop offset='0' stop-color='%23f2b98a'/%3E%3Cstop offset='.5' stop-color='%23c3733f'/%3E%3Cstop offset='1' stop-color='%23874520'/%3E%3C/radialGradient%3E%3C/defs%3E%3Ccircle cx='19' cy='19' r='17' fill='url(%23c)' stroke='%2363331a' stroke-width='1.2'/%3E%3Ccircle cx='19' cy='19' r='13.8' fill='none' stroke='%236e3a1c' stroke-opacity='.5' stroke-width='.8'/%3E%3Ctext x='19' y='22.6' text-anchor='middle' font-family='Georgia,serif' font-size='15' font-weight='bold' fill='%2358290f'%3E5%3C/text%3E%3Ctext x='19.3' y='29.4' text-anchor='middle' font-family='Arial,sans-serif' font-size='4.4' font-weight='bold' letter-spacing='.5' fill='%2358290f'%3ECENT%3C/text%3E%3C/svg%3E") 19 19, grab;
   transition: opacity .7s ease;
 }
 .capa.fuera { opacity: 0; pointer-events: none; }

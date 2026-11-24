@@ -10,8 +10,10 @@
   const reducirMovimiento = Boolean(window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches);
   const conDedo = Boolean(window.matchMedia && matchMedia('(pointer: coarse)').matches);
 
-  const UMBRAL = 0.5;         // con la mitad rascada, se destapa sola…
-  const UMBRAL_CENTRO = 0.7;  // …o con casi todo el centro, que es donde está el nombre
+  // Cuándo se da por visto el nombre (suena la campanita). La capa no se quita sola: se rasca entera a mano.
+  const UMBRAL = 0.6;         // con más de la mitad rascada…
+  const UMBRAL_CENTRO = 0.65; // …o con buena parte del centro, que es donde está el nombre
+  const TODO = 0.96;          // prácticamente todo rascado
   const CELDA = 6;            // px de las celdas con las que se mide lo rascado
   const LS_SONIDO = 'amigoInvisible.rasca.sonido';
   const ORO = ['#c9a961', '#e6cf98', '#a8864a', '#f3e4b8', '#b8964f', '#d8bd84'];
@@ -418,7 +420,8 @@
   // ───────────────────────── Rascar ─────────────────────────
 
   let listo = false;
-  let destapado = false;
+  let celebrado = false; // ya se ha llegado al nombre (campanita, destello…)
+  let quitada = false;   // la capa se ha quitado entera con «Destapar sin rascar»
   let empezado = false;
   let trazo = null;
   let caja = null;
@@ -469,9 +472,13 @@
   }
 
   function comprobar() {
+    if (celebrado) {
+      if (rascadas / rejilla.length >= TODO) ponerEstado('Rascado hasta la última mota.');
+      return;
+    }
     const p = progreso();
     if (p >= 1) {
-      destapar();
+      celebrar();
       return;
     }
     if (p > 0.7) ponerEstado('¡Casi!');
@@ -480,7 +487,7 @@
   }
 
   capa.addEventListener('pointerdown', ev => {
-    if (!listo || destapado || trazo) return;
+    if (!listo || quitada || trazo) return;
     ev.preventDefault();
     try { capa.setPointerCapture(ev.pointerId); } catch (e) { /* sin captura también funciona */ }
     const r = ev.pointerType === 'mouse' ? 16 : 21;
@@ -498,7 +505,7 @@
   });
 
   capa.addEventListener('pointermove', ev => {
-    if (!trazo || ev.pointerId !== trazo.id || destapado) return;
+    if (!trazo || ev.pointerId !== trazo.id || quitada) return;
     const seguidos = typeof ev.getCoalescedEvents === 'function' ? ev.getCoalescedEvents() : [];
     (seguidos.length ? seguidos : [ev]).forEach(e => {
       if (!trazo) return;
@@ -521,14 +528,12 @@
 
   // ───────────────────────── Destapar y tapar ─────────────────────────
 
-  function destapar() {
-    if (destapado) return;
-    destapado = true;
-    trazo = null;
+  /** Se ha llegado al nombre: campanita y destello. Lo que queda de capa sigue ahí para seguir rascando. */
+  function celebrar() {
+    if (celebrado) return;
+    celebrado = true;
     empezar();
-    Sonido.parar();
     escena.classList.add('destapado');
-    capa.classList.add('fuera');
     $('#premio').removeAttribute('aria-hidden');
     ponerEstado('Ya lo sabes. Ahora, ni una palabra 🤫');
     $('#anuncio').textContent = `Te toca regalar a ${boleto.a}.`;
@@ -540,8 +545,18 @@
     destello(nombre.left + nombre.width / 2, nombre.top + nombre.height / 2);
   }
 
+  /** «Destapar sin rascar»: aquí sí se quita la capa entera. */
+  function destapar() {
+    trazo = null;
+    Sonido.parar();
+    quitada = true;
+    capa.classList.add('fuera');
+    celebrar();
+  }
+
   function tapar() {
-    destapado = false;
+    celebrado = false;
+    quitada = false;
     escena.classList.remove('destapado');
     $('#premio').setAttribute('aria-hidden', 'true');
     $('#anuncio').textContent = '';
@@ -705,7 +720,7 @@
     colocarCorte();
     if (!listo) return;
     if (Math.abs(zona.offsetWidth - ancho) < 1 && Math.abs(zona.offsetHeight - alto) < 1) return;
-    if (destapado) {
+    if (quitada) {
       prepararLienzo();
       pintarCapa();
       crearRejilla();

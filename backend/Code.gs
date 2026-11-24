@@ -505,6 +505,11 @@ function codificarBoleto_(datos) {
   return Utilities.base64EncodeWebSafe(mezclados).replace(/=+$/, '');
 }
 
+/** La imagen de la capa dorada (img/rasca-correo.jpg), junto a rasca.html. */
+function imagenRasca_(urlRasca) {
+  return urlRasca.replace(/[^\/]*$/, '') + 'img/rasca-correo.jpg';
+}
+
 /** Enlace al rasca y gana de esta persona, o '' si no hay página del rasca. */
 function enlaceRasca_(d) {
   if (!d.urlRasca) return '';
@@ -587,12 +592,10 @@ const COLORES_CORREO = {
   oro:           ['color', '#94733d', '#c4a46a'],
   borde:         ['border-color', '#e3d8c4', '#2c4139'],
   aviso:         ['border-color', '#b08d52', '#c4a46a'],
-  // La tarjeta de «Rasca aquí»: verde oscuro y dorado, como la cabecera. Una tarjeta dorada con
-  // letras oscuras quedaba ilegible en el modo oscuro de Gmail en Android (aclara las letras y no el fondo).
+  // Detrás de la imagen del rasca: solo se ve si el programa de correo bloquea las imágenes
+  // (entonces sale «RASCA AQUÍ» en dorado sobre verde, que aguanta bien cualquier modo oscuro).
   rasca:         ['background-color', '#13241e', '#1a3029'],
-  'rasca-borde': ['border-color', '#b08d52', '#c4a46a'],
   'rasca-texto': ['color', '#e6cf98', '#e6cf98'],
-  'rasca-adorno': ['color', '#b08d52', '#c4a46a'],
   // La línea de respaldo del final: a propósito, que apenas se note.
   flojo:         ['color', '#aca293', '#5d6b64'],
 };
@@ -682,18 +685,15 @@ function htmlCorreo_(d) {
     .map(t => `<p ${at(['tinta'], parrafo)}>${e(t).replace(/\n/g, '<br>')}</p>`)
     .join('\n          ');
 
-  // Con página del rasca: tarjeta dorada que lleva a rascar, y el nombre solo en una línea discreta al final.
+  // Con página del rasca: la misma capa dorada del rasca (como imagen, para que el modo oscuro de
+  // Gmail no le cambie los colores) y el nombre solo en una línea discreta al final.
   // Sin ella: el nombre directamente, como siempre.
   const enlace = enlaceRasca_(d);
-  const adorno = `<span ${at(['rasca-adorno'], 'display:block;font-size:10px;line-height:1;letter-spacing:6px;')}>&#10022;&#10022;&#10022;&#10022;&#10022;&#10022;&#10022;&#10022;&#10022;</span>`;
   const bloqueNombre = enlace
-    ? `<div style="font-size:34px;line-height:1;">${EMOJI_CORREO}</div>
-              <table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:300px;margin:18px auto 0;"><tr>
-                <td ${at(['rasca', 'rasca-borde'], 'border:1px solid;border-radius:12px;')}>
-                  <a href="${e(enlace)}" target="_blank" ${at(['rasca-texto'], `display:block;padding:20px 12px;text-align:center;text-decoration:none;font-family:${sans};`)}>
-                    ${adorno}
-                    <span style="display:block;margin:14px 0;font-size:17px;font-weight:bold;letter-spacing:4px;text-transform:uppercase;">Rasca aquí</span>
-                    ${adorno}
+    ? `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" border="0" style="max-width:300px;margin:0 auto;"><tr>
+                <td ${at(['rasca'], 'border-radius:12px;')}>
+                  <a href="${e(enlace)}" target="_blank" style="display:block;text-decoration:none;border-radius:12px;">
+                    <img src="${e(imagenRasca_(d.urlRasca))}" width="300" height="158" alt="RASCA AQUÍ" ${at(['rasca-texto'], `display:block;width:100%;max-width:300px;height:auto;border:0;border-radius:12px;font-family:${sans};font-size:17px;font-weight:bold;letter-spacing:4px;line-height:158px;text-align:center;`)}>
                   </a>
                 </td>
               </tr></table>

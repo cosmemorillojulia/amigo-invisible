@@ -188,9 +188,9 @@ const servidor = http.createServer((req, res) => {
   if (url.pathname === '/rasca.html' || /^\/(css|js|img)\/[\w.-]+$/.test(url.pathname)) {
     const raiz = path.join(__dirname, '..');
     const archivo = path.join(raiz, url.pathname);
-    const tipos = { '.html': 'text/html', '.css': 'text/css', '.js': 'text/javascript', '.svg': 'image/svg+xml', '.png': 'image/png' };
+    const tipos = { '.html': 'text/html; charset=utf-8', '.css': 'text/css; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.svg': 'image/svg+xml', '.png': 'image/png', '.jpg': 'image/jpeg' };
     if (!archivo.startsWith(raiz + path.sep) || !fs.existsSync(archivo)) { res.writeHead(404); return res.end(); }
-    res.writeHead(200, { 'Content-Type': (tipos[path.extname(archivo)] || 'application/octet-stream') + '; charset=utf-8', 'Cache-Control': 'no-store' });
+    res.writeHead(200, { 'Content-Type': tipos[path.extname(archivo)] || 'application/octet-stream', 'Cache-Control': 'no-store' });
     return fs.createReadStream(archivo).pipe(res);
   }
 

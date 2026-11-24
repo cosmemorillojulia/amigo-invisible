@@ -516,7 +516,7 @@ test('el correo trae modo oscuro y todas sus clases tienen color en claro y en o
     titulo: 'Navidad', presupuesto: '20 €', fecha: '24 de diciembre', mensaje: 'Hola',
     lugar: { modo: 'direccion', nombre: 'Casa de Ana', direccion: 'c/ Falsa, 1' },
   }, urlRasca: 'https://alguien.github.io/amigo-invisible/rasca.html' });
-  assert.ok(html.includes('Rasca aquí'), 'con el rasca, para revisar también sus colores');
+  assert.ok(html.includes('RASCA AQUÍ'), 'con el rasca, para revisar también sus colores');
   assert.ok(html.includes('<meta name="color-scheme" content="light dark">'));
   assert.ok(html.includes('@media (prefers-color-scheme: dark)'));
   assert.match(html, /Amigo <em [^>]*>Invisible<\/em>/);
@@ -569,7 +569,9 @@ test('rasca y gana: el correo lleva el enlace y el nombre solo en la línea de r
     assert.ok(enlace, 'hay enlace al rasca');
     assert.equal(enlace.url, URL_RASCA);
     assert.deepEqual(enlace.datos, { de: da, a: recibe, titulo: 'Navidad de prueba', fecha: '24 de diciembre', presupuesto: '20 €' });
-    assert.ok(c.htmlBody.includes('Rasca aquí'));
+    // La capa dorada va como imagen, junto a rasca.html, con texto alternativo por si se bloquean las imágenes
+    assert.match(c.htmlBody, /<img src="https:\/\/alguien\.github\.io\/amigo-invisible\/img\/rasca-correo\.jpg"[^>]* alt="RASCA AQUÍ"/);
+    assert.ok(!c.htmlBody.includes('🎁'), 'sin el emoji del regalo');
 
     // El nombre asignado aparece una sola vez, en la línea discreta de debajo de la estrella del pie
     const apariciones = c.htmlBody.split(`>¿No se abre el rasca? Te ha tocado ${recibe}.<`).length - 1;
@@ -600,7 +602,8 @@ test('rasca y gana: solo se aceptan enlaces de GitHub Pages; si no, el nombre va
     b.post(sorteoReal({ urlRasca }));
     for (const c of b.correos) {
       assert.equal(boletoDelCorreo(c.htmlBody), null, urlRasca);
-      assert.ok(!c.htmlBody.includes('Rasca aquí'), urlRasca);
+      assert.ok(!c.htmlBody.includes('rasca-correo.jpg') && !c.htmlBody.includes('RASCA AQUÍ'), urlRasca);
+      assert.ok(c.htmlBody.includes('🎁'), 'sin rasca, el correo de siempre');
       assert.ok(!c.htmlBody.includes('¿No se abre el rasca?'), urlRasca);
     }
     comprobarReparto(repartoDesdeCorreos(b.correos), NOMBRES);
@@ -612,6 +615,14 @@ test('rasca y gana: la propiedad URL_RASCA manda sobre lo que pida la app', () =
   b.propiedades.set('URL_RASCA', 'https://amigo.midominio.es/rasca.html');
   b.post(sorteoReal({ urlRasca: URL_RASCA }));
   assert.equal(boletoDelCorreo(b.correos[0].htmlBody).url, 'https://amigo.midominio.es/rasca.html');
+  assert.ok(b.correos[0].htmlBody.includes('src="https://amigo.midominio.es/img/rasca-correo.jpg"'));
+});
+
+test('rasca y gana: la imagen que usa el correo existe en la web', () => {
+  const imagen = path.join(__dirname, '..', 'img', 'rasca-correo.jpg');
+  assert.ok(fs.existsSync(imagen), 'falta img/rasca-correo.jpg');
+  const cabecera = fs.readFileSync(imagen).subarray(0, 3);
+  assert.deepEqual([...cabecera], [0xff, 0xd8, 0xff], 'es un JPG');
 });
 
 test('rasca y gana: al reenviar se usa el mismo enlace del sorteo, aunque la app no lo mande', () => {

@@ -115,7 +115,9 @@ Cuando te guste, pega el `Code.gs` nuevo en Apps Script y publica una **nueva ve
 
 ## Rasca y gana
 
-En el correo, en lugar del nombre, sale una tarjeta **«Rasca aquí»**. Al pulsarla se abre [`rasca.html`](rasca.html), en tu GitHub Pages, con un boleto que se rasca con el dedo (o con el ratón, que hace de moneda).
+En el correo, en lugar del nombre, sale la capa dorada del rasca con **«Rasca aquí»**. Al pulsarla se abre [`rasca.html`](rasca.html), en tu GitHub Pages, con un boleto que se rasca con el dedo (o con el ratón, que hace de moneda de 5 céntimos).
+- Al llegar al nombre suena una campanita, pero la capa no se quita sola: se puede rascar entera a mano.
+- En el correo, la capa es una imagen ([`img/rasca-correo.jpg`](img/rasca-correo.jpg), sacada del propio rasca) para que el modo oscuro de Gmail no le cambie los colores. Si alguien tiene las imágenes bloqueadas, ve «RASCA AQUÍ» en dorado sobre verde.
 - Al final del correo, en pequeño y sin llamar la atención, va también el nombre, por si el enlace no se abre.
 - El nombre viaja en el enlace detrás de la `#`, que el navegador no envía a ningún sitio (GitHub no lo ve), y mezclado para que no se lea a simple vista. No es cifrado: quien tenga el correo puede verlo, igual que antes.
 - Por seguridad, el servidor solo pone enlaces a `https://…github.io/…/rasca.html`. Si usas un dominio propio, añade en Apps Script la propiedad `URL_RASCA` con la dirección de tu `rasca.html`.
